@@ -13,19 +13,24 @@
     "start:worker": "tsx server/worker.ts",
     "start": "tsx server/app.ts",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate deploy"
+    "prisma:migrate": "prisma db push",
+    "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "latest",
     "@prisma/client": "latest",
     "bullmq": "latest",
     "cors": "latest",
+    "dotenv": "latest",
     "express": "latest",
     "ioredis": "latest",
+    "pg": "latest",
     "react": "latest",
     "react-dom": "latest",
     "socket.io": "latest"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "latest",
     "prisma": "latest",
     "tsx": "latest",
     "typescript": "latest",

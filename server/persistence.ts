@@ -1,22 +1,26 @@
+import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { applyGameAction, type GameAction } from "./gameplayEngine";
 import { makeInitialState, type PlayerState } from "../shared/gameData";
 
-export const prisma = new PrismaClient();
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+export const prisma = new PrismaClient({ adapter });
 
 export async function ensureDemoPlayer(handle: string) {
   const clean = handle.trim().slice(0, 20);
   if (!clean || clean.length < 3) throw new Error("Handle too short");
-  let player = await prisma.player.findUnique({ where: { handle: clean } });
-  if (!player) {
-    player = await prisma.player.create({
-      data: {
-        handle: clean,
-        passwordHash: "demo-only",
-        stateJson: makeInitialState(clean),
-      },
-    });
-  }
+
+  const player = await prisma.player.upsert({
+    where: { handle: clean },
+    update: {},
+    create: {
+      handle: clean,
+      passwordHash: "demo-only",
+      stateJson: makeInitialState(clean),
+    },
+  });
+
   return player;
 }
 

@@ -3,7 +3,16 @@ import express from "express";
 import { createServer } from "node:http";
 import { Server } from "socket.io";
 import { type GameAction } from "./gameplayEngine";
-import { applyPlayerAction, bootstrapHandle, ensureDemoPlayer } from "./persistence";
+import {
+  applyPlayerAction,
+  bootstrapHandle,
+  createCrewForHandle,
+  createCrewInvite,
+  ensureDemoPlayer,
+  postCrewMessage,
+  respondToInvite,
+  searchPlayers,
+} from "./persistence";
 import { attackDurableTerritory, durableTerritories, listNotificationsForHandle, markNotificationRead } from "./worldLive";
 import { buyListing, cancelListing, claimContract, createListing, listContracts, listMarket } from "./economyWorld";
 
@@ -27,7 +36,7 @@ async function fullBootstrap(handle: string) {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "api", mode: "live-foundation", ts: new Date().toISOString() });
+  res.json({ ok: true, service: "api", mode: "main-shell", ts: new Date().toISOString() });
 });
 
 app.post("/api/demo/register", async (req, res) => {
@@ -56,6 +65,53 @@ app.post("/api/demo/:handle/actions", async (req, res) => {
     res.json(await fullBootstrap(req.params.handle));
   } catch (error: any) {
     res.status(400).json({ error: error.message || "Action failed" });
+  }
+});
+
+app.post("/api/demo/:handle/crews", async (req, res) => {
+  try {
+    const crew = await createCrewForHandle(req.params.handle, String(req.body?.name || ""), String(req.body?.tag || ""));
+    io.emit("crew:refresh", { crewId: crew.id });
+    res.json(await fullBootstrap(req.params.handle));
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Crew creation failed" });
+  }
+});
+
+app.get("/api/demo/:handle/players/search", async (req, res) => {
+  try {
+    res.json(await searchPlayers(String(req.query.q || ""), req.params.handle));
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Search failed" });
+  }
+});
+
+app.post("/api/demo/:handle/crews/:crewId/invites", async (req, res) => {
+  try {
+    const invite = await createCrewInvite(req.params.handle, String(req.body?.targetHandle || ""));
+    res.json({ ok: true, inviteId: invite.id, bootstrap: await fullBootstrap(req.params.handle) });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Invite failed" });
+  }
+});
+
+app.post("/api/demo/:handle/invites/:inviteId/respond", async (req, res) => {
+  try {
+    const result = await respondToInvite(req.params.handle, req.params.inviteId, !!req.body?.accept);
+    res.json({ ...result, bootstrap: await fullBootstrap(req.params.handle) });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Invite response failed" });
+  }
+});
+
+app.post("/api/demo/:handle/crews/:crewId/chat", async (req, res) => {
+  try {
+    const row = await postCrewMessage(req.params.handle, req.params.crewId, String(req.body?.body || ""));
+    const payload = await fullBootstrap(req.params.handle);
+    io.to(`crew:${req.params.crewId}`).emit("crew:message", row);
+    res.json(payload);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "Chat failed" });
   }
 });
 
@@ -123,9 +179,12 @@ app.post("/api/demo/:handle/notifications/:notificationId/read", async (req, res
 });
 
 io.on("connection", (socket) => {
-  socket.emit("system", { ok: true, message: "Connected to Metro Syndicate live foundation." });
+  socket.on("crew:join", (crewId: string) => {
+    socket.join(`crew:${crewId}`);
+  });
+  socket.emit("system", { ok: true, message: "Connected to Metro Syndicate main shell." });
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`Metro Syndicate live foundation listening on :${PORT}`);
+  console.log(`Metro Syndicate main shell listening on :${PORT}`);
 });
