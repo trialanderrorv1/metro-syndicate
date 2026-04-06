@@ -4,10 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev:web": "vite",
+    "dev:web": "vite --host 0.0.0.0 --port 3000",
     "dev:api": "tsx server/app.ts",
     "dev:worker": "tsx server/worker.ts",
     "build:web": "vite build",
+    "start:web": "vite --host 0.0.0.0 --port 3000",
+    "start:api": "tsx server/app.ts",
+    "start:worker": "tsx server/worker.ts",
+    "start": "tsx server/app.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy"
   },
