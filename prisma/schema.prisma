@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CrewRole {
+  BOSS
+  UNDERBOSS
+  CAPTAIN
+  MEMBER
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  REVOKED
+}
+
+model Player {
+  id           String   @id @default(cuid())
+  handle       String   @unique
+  passwordHash String
+  crewId       String?
+  stateJson    Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Crew {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  tag       String?
+  ownerId   String   @unique
+  cash      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CrewInvite {
+  id           String       @id @default(cuid())
+  crewId       String
+  fromPlayerId String
+  toPlayerId   String
+  status       InviteStatus @default(PENDING)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model DirectMessage {
+  id           String   @id @default(cuid())
+  fromPlayerId String
+  toPlayerId   String
+  body         String
+  createdAt    DateTime @default(now())
+}
+
+model MarketListing {
+  id        String   @id @default(cuid())
+  playerId   String
+  itemId     String
+  quantity   Int
+  unitPrice  Int
+  status     String   @default("ACTIVE")
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model ContractMission {
+  id           String   @id @default(cuid())
+  title        String
+  body         String
+  rewardCash   Int
+  rewardItemId String?
+  rewardRespect Int
+  expiresAt    DateTime
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+}
+
+model Territory {
+  id         String   @id @default(cuid())
+  slug       String   @unique
+  name       String
+  cityId     String
+  baseIncome Int
+  createdAt  DateTime @default(now())
+}
