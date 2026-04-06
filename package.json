@@ -1,0 +1,30 @@
+{
+  "name": "metro-syndicate",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev:web": "vite",
+    "dev:api": "tsx server/app.ts",
+    "dev:worker": "tsx server/worker.ts",
+    "build:web": "vite build",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@prisma/client": "latest",
+    "bullmq": "latest",
+    "cors": "latest",
+    "express": "latest",
+    "ioredis": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "socket.io": "latest"
+  },
+  "devDependencies": {
+    "prisma": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  }
+}
