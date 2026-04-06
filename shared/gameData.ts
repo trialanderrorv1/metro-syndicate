@@ -3,6 +3,7 @@ export type PlayerState = {
   cash: number;
   bank: number;
   energy: number;
+  energyUpdatedAt: string;
   health: number;
   strength: number;
   speed: number;
@@ -54,6 +55,7 @@ export function makeInitialState(alias = "Rookie"): PlayerState {
     cash: 1500,
     bank: 0,
     energy: 100,
+    energyUpdatedAt: new Date().toISOString(),
     health: 100,
     strength: 8,
     speed: 8,

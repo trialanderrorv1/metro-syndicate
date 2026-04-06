@@ -7,6 +7,41 @@ import { makeInitialState, type PlayerState } from "../shared/gameData";
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 export const prisma = new PrismaClient({ adapter });
 
+const ENERGY_REGEN_AMOUNT = 5;
+const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
+const MAX_ENERGY = 100;
+
+function normalizePlayerState(state: PlayerState): PlayerState {
+  const safeUpdatedAt = state.energyUpdatedAt || new Date().toISOString();
+  const updatedAtMs = new Date(safeUpdatedAt).getTime();
+  const nowMs = Date.now();
+  if (!Number.isFinite(updatedAtMs)) {
+    return { ...state, energyUpdatedAt: new Date().toISOString() };
+  }
+
+  if (state.energy >= MAX_ENERGY) {
+    return { ...state, energy: MAX_ENERGY, energyUpdatedAt: new Date(nowMs).toISOString() };
+  }
+
+  const elapsed = Math.max(0, nowMs - updatedAtMs);
+  const ticks = Math.floor(elapsed / ENERGY_REGEN_INTERVAL_MS);
+  if (ticks <= 0) return state;
+
+  const regained = ticks * ENERGY_REGEN_AMOUNT;
+  const nextEnergy = Math.min(MAX_ENERGY, state.energy + regained);
+  const nextAnchor = nextEnergy >= MAX_ENERGY ? nowMs : updatedAtMs + ticks * ENERGY_REGEN_INTERVAL_MS;
+
+  return {
+    ...state,
+    energy: nextEnergy,
+    energyUpdatedAt: new Date(nextAnchor).toISOString(),
+  };
+}
+
+async function persistNormalizedState(playerId: string, state: PlayerState) {
+  return prisma.player.update({ where: { id: playerId }, data: { stateJson: state } });
+}
+
 export async function ensureDemoPlayer(handle: string) {
   const clean = handle.trim().slice(0, 20);
   if (!clean || clean.length < 3) throw new Error("Handle too short");
@@ -27,6 +62,14 @@ export async function ensureDemoPlayer(handle: string) {
 export async function loadPlayerByHandle(handle: string) {
   const player = await prisma.player.findUnique({ where: { handle } });
   if (!player) throw new Error("Player not found");
+
+  const current = player.stateJson as PlayerState;
+  const normalized = normalizePlayerState(current);
+  if (JSON.stringify(current) !== JSON.stringify(normalized)) {
+    await persistNormalizedState(player.id, normalized);
+    return { ...player, stateJson: normalized };
+  }
+
   return player;
 }
 
@@ -124,15 +167,16 @@ export async function getCrewMessages(crewId: string) {
 
 export async function bootstrapHandle(handle: string) {
   const player = await ensureDemoPlayer(handle);
-  const crew = player.crewId ? await prisma.crew.findUnique({ where: { id: player.crewId } }) : null;
-  const roster = player.crewId
-    ? await prisma.player.findMany({ where: { crewId: player.crewId }, select: { id: true, handle: true } })
+  const hydrated = await loadPlayerByHandle(player.handle);
+  const crew = hydrated.crewId ? await prisma.crew.findUnique({ where: { id: hydrated.crewId } }) : null;
+  const roster = hydrated.crewId
+    ? await prisma.player.findMany({ where: { crewId: hydrated.crewId }, select: { id: true, handle: true } })
     : [];
-  const invitesRaw = await prisma.crewInvite.findMany({ where: { toPlayerId: player.id, status: "PENDING" }, orderBy: { createdAt: "desc" } });
+  const invitesRaw = await prisma.crewInvite.findMany({ where: { toPlayerId: hydrated.id, status: "PENDING" }, orderBy: { createdAt: "desc" } });
   const crews = invitesRaw.length ? await prisma.crew.findMany({ where: { id: { in: invitesRaw.map((i) => i.crewId) } }, select: { id: true, name: true, tag: true } }) : [];
   const crewById = Object.fromEntries(crews.map((c) => [c.id, c]));
   return {
-    player: { id: player.id, handle: player.handle, crewId: player.crewId, state: player.stateJson as PlayerState },
+    player: { id: hydrated.id, handle: hydrated.handle, crewId: hydrated.crewId, state: hydrated.stateJson as PlayerState },
     crew: crew ? { id: crew.id, name: crew.name, tag: crew.tag, cash: crew.cash, roster, messages: await getCrewMessages(crew.id) } : null,
     invites: invitesRaw.map((invite) => ({ id: invite.id, crewId: invite.crewId, crewName: crewById[invite.crewId]?.name || "Unknown Crew", crewTag: crewById[invite.crewId]?.tag || null })),
   };
