@@ -8,9 +8,9 @@ export async function seedContractsAndTerritories() {
   if (contracts === 0) {
     await prisma.contractMission.createMany({
       data: [
-        { title: "Silent Extraction", body: "Run one street crime and cash out safely.", rewardCash: 1800, rewardItemId: null, rewardRespect: 3, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), status: "ACTIVE" },
-        { title: "Dock Sweep", body: "Beat a rival and hold your nerve.", rewardCash: 2200, rewardItemId: "utility-1", rewardRespect: 4, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), status: "ACTIVE" },
-        { title: "Hard Reset", body: "Work, recover, and stay moving.", rewardCash: 1400, rewardItemId: null, rewardRespect: 2, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), status: "ACTIVE" }
+        { title: "Silent Extraction", body: "Complete a street crime and keep the cash moving.", rewardCash: 1800, rewardItemId: null, rewardRespect: 3, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), status: "ACTIVE" },
+        { title: "Dock Sweep", body: "Beat a rival and show the district you can hold ground.", rewardCash: 2200, rewardItemId: "utility-signalrig", rewardRespect: 4, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), status: "ACTIVE" },
+        { title: "Payroll Run", body: "Hold a company job and collect your daily pay on time.", rewardCash: 1400, rewardItemId: null, rewardRespect: 2, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24), status: "ACTIVE" }
       ]
     });
   }
@@ -38,7 +38,7 @@ export async function createListing(handle: string, itemId: string, quantity: nu
   const price = Math.max(1, Math.min(1_000_000, Math.round(unitPrice)));
   if ((state.inventory[itemId] || 0) < qty) throw new Error("Not enough items");
   state.inventory[itemId] -= qty;
-  state.log = [`Listed ${qty}x ${itemId} on the market.`, ...state.log].slice(0, 12);
+  state.log = [`Listed ${qty}x ${itemId} on the market.`, ...state.log].slice(0, 14);
   await savePlayerState(player.id, state);
   await prisma.marketListing.create({
     data: {
@@ -66,9 +66,9 @@ export async function buyListing(handle: string, listingId: string) {
   const sellerState = seller.stateJson as PlayerState;
   buyerState.cash -= total;
   buyerState.inventory[listing.itemId] = (buyerState.inventory[listing.itemId] || 0) + listing.quantity;
-  buyerState.log = [`Bought ${listing.quantity}x ${listing.itemId} from the market.`, ...buyerState.log].slice(0, 12);
+  buyerState.log = [`Bought ${listing.quantity}x ${listing.itemId} from the market.`, ...buyerState.log].slice(0, 14);
   sellerState.cash += total;
-  sellerState.log = [`Sold ${listing.quantity}x ${listing.itemId} on the market.`, ...sellerState.log].slice(0, 12);
+  sellerState.log = [`Sold ${listing.quantity}x ${listing.itemId} on the market.`, ...sellerState.log].slice(0, 14);
   await prisma.marketListing.update({ where: { id: listing.id }, data: { status: "SOLD" } });
   await savePlayerState(buyer.id, buyerState);
   await savePlayerState(seller.id, sellerState);
@@ -81,7 +81,7 @@ export async function cancelListing(handle: string, listingId: string) {
   if (!listing || listing.playerId !== player.id || listing.status !== "ACTIVE") throw new Error("Listing unavailable");
   const state = player.stateJson as PlayerState;
   state.inventory[listing.itemId] = (state.inventory[listing.itemId] || 0) + listing.quantity;
-  state.log = [`Cancelled listing for ${listing.itemId}.`, ...state.log].slice(0, 12);
+  state.log = [`Cancelled listing for ${listing.itemId}.`, ...state.log].slice(0, 14);
   await prisma.marketListing.update({ where: { id: listing.id }, data: { status: "CANCELLED" } });
   await savePlayerState(player.id, state);
   return bootstrapHandle(handle);
@@ -102,7 +102,7 @@ export async function claimContract(handle: string, contractId: string) {
   if (contract.rewardItemId) {
     state.inventory[contract.rewardItemId] = (state.inventory[contract.rewardItemId] || 0) + 1;
   }
-  state.log = [`Claimed contract ${contract.title}.`, ...state.log].slice(0, 12);
+  state.log = [`Claimed contract ${contract.title}.`, ...state.log].slice(0, 14);
   await prisma.contractMission.update({ where: { id: contract.id }, data: { status: "CLAIMED" } });
   await savePlayerState(player.id, state);
   return bootstrapHandle(handle);
@@ -132,11 +132,12 @@ export async function attackTerritory(handle: string, territoryId: string) {
   if (success) {
     territoryOwners.set(territory.id, { crewId: crew.id, crewName: crew.name, defense: attackPower });
     await prisma.crew.update({ where: { id: crew.id }, data: { cash: { increment: territory.baseIncome } } });
-    state.log = [`Captured ${territory.name} for ${crew.name}.`, ...state.log].slice(0, 12);
+    state.log = [`Captured ${territory.name} for ${crew.name}.`, ...state.log].slice(0, 14);
     await savePlayerState(player.id, state);
   } else {
     state.health = Math.max(0, state.health - 10);
-    state.log = [`Failed to take ${territory.name}.`, ...state.log].slice(0, 12);
+    state.healthUpdatedAt = new Date().toISOString();
+    state.log = [`Failed to take ${territory.name}.`, ...state.log].slice(0, 14);
     await savePlayerState(player.id, state);
   }
   return { success, bootstrap: await bootstrapHandle(handle), territories: await listTerritories() };
