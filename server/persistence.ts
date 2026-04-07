@@ -2,7 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { applyGameAction, type GameAction } from "./gameplayEngine";
-import { makeInitialState, type PlayerState } from "../shared/gameData";
+import { JOBS, makeInitialState, type PlayerState } from "../shared/gameData";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 export const prisma = new PrismaClient({ adapter });
@@ -13,6 +13,9 @@ const MAX_ENERGY = 100;
 const BRAVERY_REGEN_AMOUNT = 1;
 const BRAVERY_REGEN_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_BRAVERY = 20;
+const HEALTH_REGEN_AMOUNT = 10;
+const HEALTH_REGEN_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_HEALTH = 100;
 
 function normalizeFixedScheduleStat(
   value: number,
@@ -52,27 +55,45 @@ function normalizeFixedScheduleStat(
 }
 
 function normalizePlayerState(state: PlayerState): PlayerState {
-  const energy = normalizeFixedScheduleStat(
-    state.energy,
-    state.energyUpdatedAt,
-    MAX_ENERGY,
-    ENERGY_REGEN_AMOUNT,
-    ENERGY_REGEN_INTERVAL_MS,
-  );
-  const bravery = normalizeFixedScheduleStat(
-    state.bravery,
-    state.braveryUpdatedAt,
-    MAX_BRAVERY,
-    BRAVERY_REGEN_AMOUNT,
-    BRAVERY_REGEN_INTERVAL_MS,
-  );
+  const nowIso = new Date().toISOString();
+  const base: PlayerState = {
+    ...state,
+    energy: Number(state.energy ?? 100),
+    energyUpdatedAt: state.energyUpdatedAt || nowIso,
+    bravery: Number(state.bravery ?? 20),
+    braveryUpdatedAt: state.braveryUpdatedAt || nowIso,
+    health: Number(state.health ?? 100),
+    healthUpdatedAt: state.healthUpdatedAt || nowIso,
+    strength: Number(state.strength ?? 8),
+    speed: Number(state.speed ?? 8),
+    defense: Number(state.defense ?? 8),
+    respect: Number(state.respect ?? 0),
+    city: state.city || "apex",
+    job: state.job || JOBS[0].id,
+    jobLastPaidOn: state.jobLastPaidOn || null,
+    jailUntil: state.jailUntil || null,
+    day: Number(state.day ?? 1),
+    wins: Number(state.wins ?? 0),
+    losses: Number(state.losses ?? 0),
+    crimesSucceeded: Number(state.crimesSucceeded ?? 0),
+    crimesFailed: Number(state.crimesFailed ?? 0),
+    inventory: state.inventory || {},
+    equipped: state.equipped || { weapon: null, armor: null, utility: null },
+    log: state.log || ["Welcome to Metro Syndicate."],
+  };
+
+  const energy = normalizeFixedScheduleStat(base.energy, base.energyUpdatedAt, MAX_ENERGY, ENERGY_REGEN_AMOUNT, ENERGY_REGEN_INTERVAL_MS);
+  const bravery = normalizeFixedScheduleStat(base.bravery, base.braveryUpdatedAt, MAX_BRAVERY, BRAVERY_REGEN_AMOUNT, BRAVERY_REGEN_INTERVAL_MS);
+  const health = normalizeFixedScheduleStat(base.health, base.healthUpdatedAt, MAX_HEALTH, HEALTH_REGEN_AMOUNT, HEALTH_REGEN_INTERVAL_MS);
 
   return {
-    ...state,
+    ...base,
     energy: energy.value,
     energyUpdatedAt: energy.updatedAt,
     bravery: bravery.value,
     braveryUpdatedAt: bravery.updatedAt,
+    health: health.value,
+    healthUpdatedAt: health.updatedAt,
   };
 }
 
@@ -138,7 +159,7 @@ export async function createCrewForHandle(handle: string, name: string, tag?: st
   const nextState: PlayerState = {
     ...state,
     cash: state.cash - 5000,
-    log: [`Founded crew ${crew.name}.`, ...state.log].slice(0, 12),
+    log: [`Founded crew ${crew.name}.`, ...state.log].slice(0, 14),
   };
   await prisma.player.update({ where: { id: player.id }, data: { crewId: crew.id, stateJson: nextState } });
   return crew;
