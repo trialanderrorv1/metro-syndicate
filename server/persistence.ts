@@ -14,7 +14,13 @@ const BRAVERY_REGEN_AMOUNT = 1;
 const BRAVERY_REGEN_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_BRAVERY = 20;
 
-function normalizeTimedStat(value: number, updatedAt: string | undefined, maxValue: number, regenAmount: number, regenIntervalMs: number) {
+function normalizeFixedScheduleStat(
+  value: number,
+  updatedAt: string | undefined,
+  maxValue: number,
+  regenAmount: number,
+  regenIntervalMs: number,
+) {
   const nowMs = Date.now();
   const safeUpdatedAt = updatedAt || new Date(nowMs).toISOString();
   const updatedAtMs = new Date(safeUpdatedAt).getTime();
@@ -27,13 +33,17 @@ function normalizeTimedStat(value: number, updatedAt: string | undefined, maxVal
     return { value: maxValue, updatedAt: new Date(nowMs).toISOString() };
   }
 
-  const elapsed = Math.max(0, nowMs - updatedAtMs);
-  const ticks = Math.floor(elapsed / regenIntervalMs);
-  if (ticks <= 0) return { value, updatedAt: safeUpdatedAt };
+  const nowBucketMs = Math.floor(nowMs / regenIntervalMs) * regenIntervalMs;
+  const updatedBucketMs = Math.floor(updatedAtMs / regenIntervalMs) * regenIntervalMs;
+  const ticks = Math.max(0, Math.floor((nowBucketMs - updatedBucketMs) / regenIntervalMs));
+
+  if (ticks <= 0) {
+    return { value, updatedAt: safeUpdatedAt };
+  }
 
   const regained = ticks * regenAmount;
   const nextValue = Math.min(maxValue, value + regained);
-  const nextAnchorMs = nextValue >= maxValue ? nowMs : updatedAtMs + ticks * regenIntervalMs;
+  const nextAnchorMs = nextValue >= maxValue ? nowMs : nowBucketMs;
 
   return {
     value: nextValue,
@@ -42,8 +52,20 @@ function normalizeTimedStat(value: number, updatedAt: string | undefined, maxVal
 }
 
 function normalizePlayerState(state: PlayerState): PlayerState {
-  const energy = normalizeTimedStat(state.energy, state.energyUpdatedAt, MAX_ENERGY, ENERGY_REGEN_AMOUNT, ENERGY_REGEN_INTERVAL_MS);
-  const bravery = normalizeTimedStat(state.bravery, state.braveryUpdatedAt, MAX_BRAVERY, BRAVERY_REGEN_AMOUNT, BRAVERY_REGEN_INTERVAL_MS);
+  const energy = normalizeFixedScheduleStat(
+    state.energy,
+    state.energyUpdatedAt,
+    MAX_ENERGY,
+    ENERGY_REGEN_AMOUNT,
+    ENERGY_REGEN_INTERVAL_MS,
+  );
+  const bravery = normalizeFixedScheduleStat(
+    state.bravery,
+    state.braveryUpdatedAt,
+    MAX_BRAVERY,
+    BRAVERY_REGEN_AMOUNT,
+    BRAVERY_REGEN_INTERVAL_MS,
+  );
 
   return {
     ...state,
