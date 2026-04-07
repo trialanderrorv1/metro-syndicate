@@ -34,6 +34,18 @@ const TABS: Array<{ key: TabKey; label: string; icon: string }> = [
 const ENERGY_TICK_MS = 10 * 60 * 1000;
 const BRAVERY_TICK_MS = 5 * 60 * 1000;
 
+function getRemainingUntilBoundary(nowMs: number, intervalMs: number) {
+  const elapsedInBucket = nowMs % intervalMs;
+  return elapsedInBucket === 0 ? 0 : intervalMs - elapsedInBucket;
+}
+
+function formatRemaining(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
 export default function App() {
   const [handle, setHandle] = useState("Dean");
   const [data, setData] = useState<Bootstrap | null>(null);
@@ -77,6 +89,24 @@ export default function App() {
     return () => {
       window.clearInterval(refreshTimer);
       window.clearInterval(clockTimer);
+    };
+  }, [handle]);
+
+  useEffect(() => {
+    let timeoutId: number | undefined;
+
+    const scheduleBoundaryRefresh = () => {
+      const now = Date.now();
+      const delay = getRemainingUntilBoundary(now, BRAVERY_TICK_MS) || BRAVERY_TICK_MS;
+      timeoutId = window.setTimeout(async () => {
+        await refresh().catch(() => undefined);
+        scheduleBoundaryRefresh();
+      }, delay + 150);
+    };
+
+    scheduleBoundaryRefresh();
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
     };
   }, [handle]);
 
@@ -201,26 +231,20 @@ export default function App() {
   const energyMeta = useMemo(() => {
     if (!data) return { pct: 0, text: "--" };
     const state = data.player.state;
-    const last = new Date(state.energyUpdatedAt || clockMs).getTime();
-    const remainingMs = state.energy >= 100 ? 0 : Math.max(0, ENERGY_TICK_MS - ((clockMs - last) % ENERGY_TICK_MS));
-    const minutes = Math.floor(remainingMs / 60000);
-    const seconds = Math.floor((remainingMs % 60000) / 1000);
+    const remainingMs = state.energy >= 100 ? 0 : getRemainingUntilBoundary(clockMs, ENERGY_TICK_MS);
     return {
       pct: Math.max(0, Math.min(100, Number(state.energy || 0))),
-      text: state.energy >= 100 ? "Full" : `Next +5 in: ${minutes}m ${String(seconds).padStart(2, "0")}s`,
+      text: state.energy >= 100 ? "Full" : `Next +5 in: ${formatRemaining(remainingMs)}`,
     };
   }, [data, clockMs]);
 
   const braveryMeta = useMemo(() => {
     if (!data) return { pct: 0, text: "--" };
     const state = data.player.state;
-    const last = new Date(state.braveryUpdatedAt || clockMs).getTime();
-    const remainingMs = state.bravery >= 20 ? 0 : Math.max(0, BRAVERY_TICK_MS - ((clockMs - last) % BRAVERY_TICK_MS));
-    const minutes = Math.floor(remainingMs / 60000);
-    const seconds = Math.floor((remainingMs % 60000) / 1000);
+    const remainingMs = state.bravery >= 20 ? 0 : getRemainingUntilBoundary(clockMs, BRAVERY_TICK_MS);
     return {
       pct: Math.max(0, Math.min(100, (Number(state.bravery || 0) / 20) * 100)),
-      text: state.bravery >= 20 ? "Full" : `Next +1 in: ${minutes}m ${String(seconds).padStart(2, "0")}s`,
+      text: state.bravery >= 20 ? "Full" : `Next +1 in: ${formatRemaining(remainingMs)}`,
     };
   }, [data, clockMs]);
 
