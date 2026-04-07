@@ -191,8 +191,15 @@ export default function App() {
     const remainingMs = state.energy >= 100 ? 0 : Math.max(0, 10 * 60 * 1000 - ((now - last) % (10 * 60 * 1000)));
     const minutes = Math.floor(remainingMs / 60000);
     const seconds = Math.floor((remainingMs % 60000) / 1000);
-    const pct = state.energy;
-    return { nextTickText: state.energy >= 100 ? "Full" : `+5 in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`, pct };
+    return {
+      nextTickText: state.energy >= 100 ? "Full" : `+5 in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`,
+      pct: state.energy,
+    };
+  }, [data]);
+
+  const braveryPct = useMemo(() => {
+    if (!data) return 0;
+    return Math.max(0, Math.min(100, (Number(data.player.state.bravery || 0) / 20) * 100));
   }, [data]);
 
   if (!data) {
@@ -208,7 +215,7 @@ export default function App() {
           <div style={brandCardStyle}>
             <div style={{ fontSize: 11, letterSpacing: "0.24em", color: "#7dd3fc", textTransform: "uppercase" }}>Metro Syndicate</div>
             <div style={{ marginTop: 8, fontSize: 28, fontWeight: 800 }}>Underworld Ops</div>
-            <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 13 }}>Torn-like command layout with a sharper 2026 finish.</div>
+            <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 13 }}>Torn-style command layout with a sharper 2026 finish.</div>
           </div>
 
           <div style={sidebarPanelStyle}>
@@ -241,7 +248,7 @@ export default function App() {
               <MiniStat label="Cash" value={state.cash} />
               <MiniStat label="Bank" value={state.bank} />
               <MiniStat label="Respect" value={state.respect} />
-              <MiniStat label="Heat" value={state.heat} />
+              <MiniStat label="Bravery" value={`${state.bravery}/20`} />
             </div>
           </header>
 
@@ -277,8 +284,9 @@ export default function App() {
           {tab === "crimes" ? (
             <div style={contentGridStyle}>
               <Panel title="Street work">
-                <ActionButton onClick={() => runAction({ type: "crime", crimeId: "pick" })} label="Lift wallet" />
-                <ActionButton onClick={() => runAction({ type: "crime", crimeId: "boost" })} label="Boost car" ghost />
+                <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 4 }}>Crimes now consume bravery instead of energy.</div>
+                <ActionButton onClick={() => runAction({ type: "crime", crimeId: "pick" })} label="Lift wallet • 4 bravery" />
+                <ActionButton onClick={() => runAction({ type: "crime", crimeId: "boost" })} label="Boost car • 8 bravery" ghost />
                 <ActionButton onClick={() => runAction({ type: "fightRival", rivalId: "dockhand" })} label="Fight dockhand" ghost />
               </Panel>
               <Panel title="Travel and setup">
@@ -297,7 +305,7 @@ export default function App() {
                 <ActionButton onClick={() => runAction({ type: "train", stat: "defense" })} label="Train defense" ghost />
               </Panel>
               <Panel title="Recovery">
-                <div style={{ color: "#94a3b8", marginBottom: 10 }}>Energy now regenerates by 5 every 10 minutes.</div>
+                <div style={{ color: "#94a3b8", marginBottom: 10 }}>Energy regenerates by 5 every 10 minutes. Recover resets health, energy, and bravery.</div>
                 <ActionButton onClick={() => runAction({ type: "recover" })} label="Manual recover" />
               </Panel>
             </div>
@@ -455,18 +463,19 @@ export default function App() {
           </div>
 
           <div style={rightCardStyle}>
+            <div style={sectionLabelStyle}>Bravery</div>
+            <div style={{ fontSize: 24, fontWeight: 800 }}>{state.bravery}/20</div>
+            <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 10 }}>Crime resource</div>
+            <div style={meterTrackStyle}><div style={{ ...meterFillStyle, width: `${braveryPct}%` }} /></div>
+            <div style={{ marginTop: 8, color: "#7dd3fc", fontSize: 13 }}>Crimes deduct from bravery.</div>
+          </div>
+
+          <div style={rightCardStyle}>
             <div style={sectionLabelStyle}>Profile</div>
             <StatRow label="City" value={state.city} compact />
             <StatRow label="Job" value={state.job} compact />
             <StatRow label="Crew" value={data.crew?.name || "None"} compact />
             <StatRow label="Health" value={state.health} compact />
-          </div>
-
-          <div style={rightCardStyle}>
-            <div style={sectionLabelStyle}>Regen rules</div>
-            <div style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.5 }}>
-              Server-authoritative energy regeneration: <strong>+5 energy every 10 minutes</strong>, capped at 100.
-            </div>
           </div>
         </aside>
       </div>

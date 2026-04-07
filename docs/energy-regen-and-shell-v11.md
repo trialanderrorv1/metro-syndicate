@@ -1,12 +1,14 @@
-# Energy regeneration and Torn-like shell update
+# Energy, bravery, and shell update
 
 ## Included
-- server-authoritative energy regeneration at 5 energy every 10 minutes
-- passive regen calculated from `energyUpdatedAt` in player state
-- Torn-inspired shell layout with a left navigation rail, central action/content area, and right status rail
-- UI auto-refresh so passive energy changes appear during testing
+- passive energy regeneration at 5 energy every 10 minutes
+- bravery added as a dedicated crime resource starting at 20
+- crimes now deduct bravery instead of energy
+- recover resets health, energy, and bravery
+- Torn-inspired shell layout with a left nav rail, central action/content area, and right-side status rail
+- frontend auto-refresh so passive energy gains are visible during local testing
 
 ## Notes
-- regen is applied during player load/bootstrap and before actions, so it works without requiring the worker to be online
 - energy still caps at 100
-- the layout is inspired by Torn's structure, but remains original and uses no licensable assets
+- bravery currently caps at 20 and is intended as the crime bar
+- the layout is inspired by Torn's structure only; all visuals remain original and asset-light

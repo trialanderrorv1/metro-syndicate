@@ -14,6 +14,7 @@ export type GameAction =
   | { type: "personalWithdraw"; amount: number };
 
 const MAX_ENERGY = 100;
+const MAX_BRAVERY = 20;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -36,6 +37,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
     case "recover": {
       next.energy = MAX_ENERGY;
       next.energyUpdatedAt = nowIso;
+      next.bravery = MAX_BRAVERY;
       next.health = clamp(next.health + 20, 0, 100);
       next.day += 1;
       push("Recovered and reset your edge.");
@@ -84,11 +86,10 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
     case "crime": {
       const crime = CRIMES.find((c) => c.id === action.crimeId);
       if (!crime) throw new Error("Crime not found");
-      if (next.energy < crime.energy) throw new Error("Not enough energy");
+      if (next.bravery < crime.bravery) throw new Error("Not enough bravery");
       const successChance = clamp(55 + next.speed + next.strength - crime.risk - next.heat / 2, 15, 92);
       const success = Math.random() * 100 <= successChance;
-      next.energy -= crime.energy;
-      next.energyUpdatedAt = nowIso;
+      next.bravery -= crime.bravery;
       next.day += 1;
       if (success) {
         next.cash += crime.cash;

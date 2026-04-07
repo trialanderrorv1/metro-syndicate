@@ -4,6 +4,7 @@ export type PlayerState = {
   bank: number;
   energy: number;
   energyUpdatedAt: string;
+  bravery: number;
   health: number;
   strength: number;
   speed: number;
@@ -33,8 +34,8 @@ export const JOBS = [
 ];
 
 export const CRIMES = [
-  { id: "pick", name: "Lift Wallet", cash: 140, respect: 1, energy: 8, risk: 12, req: 0 },
-  { id: "boost", name: "Boost Car", cash: 680, respect: 3, energy: 16, risk: 28, req: 6 }
+  { id: "pick", name: "Lift Wallet", cash: 140, respect: 1, bravery: 4, risk: 12, req: 0 },
+  { id: "boost", name: "Boost Car", cash: 680, respect: 3, bravery: 8, risk: 28, req: 6 }
 ];
 
 export const RIVALS = [
@@ -56,6 +57,7 @@ export function makeInitialState(alias = "Rookie"): PlayerState {
     bank: 0,
     energy: 100,
     energyUpdatedAt: new Date().toISOString(),
+    bravery: 20,
     health: 100,
     strength: 8,
     speed: 8,
