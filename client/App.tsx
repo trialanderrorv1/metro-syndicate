@@ -3,7 +3,14 @@ import { apiCall } from "./secureApi";
 
 type Bootstrap = {
   player: { id: string; handle: string; crewId: string | null; state: any };
-  crew: null | { id: string; name: string; tag: string | null; cash: number; roster: Array<{ id: string; handle: string }>; messages: Array<{ id: string; handle: string; body: string; createdAt: string }> };
+  crew: null | {
+    id: string;
+    name: string;
+    tag: string | null;
+    cash: number;
+    roster: Array<{ id: string; handle: string }>;
+    messages: Array<{ id: string; handle: string; body: string; createdAt: string }>;
+  };
   invites: Array<{ id: string; crewId: string; crewName: string; crewTag: string | null }>;
   market: Array<any>;
   contracts: Array<any>;
@@ -11,36 +18,33 @@ type Bootstrap = {
   notifications: Array<any>;
 };
 
-type TabKey = "overview" | "crimes" | "gym" | "crew" | "market" | "territories" | "inbox" | "log";
+type TabKey = "overview" | "crimes" | "jobs" | "market" | "crew" | "territories" | "inbox" | "log";
 
-const TABS: Array<[TabKey, string]> = [
-  ["overview", "Home"],
-  ["crimes", "Crimes"],
-  ["gym", "Gym"],
-  ["crew", "Crews"],
-  ["market", "Market"],
-  ["territories", "Territories"],
-  ["inbox", "Inbox"],
-  ["log", "Log"],
+const TABS: Array<{ key: TabKey; label: string; icon: string }> = [
+  { key: "overview", label: "Home", icon: "⌂" },
+  { key: "jobs", label: "Jobs", icon: "▣" },
+  { key: "crimes", label: "Crimes", icon: "◈" },
+  { key: "market", label: "Market", icon: "◫" },
+  { key: "crew", label: "Crews", icon: "☰" },
+  { key: "territories", label: "Territory", icon: "⌘" },
+  { key: "inbox", label: "Inbox", icon: "✉" },
+  { key: "log", label: "Log", icon: "⋯" },
 ];
 
 const ENERGY_TICK_MS = 10 * 60 * 1000;
 const BRAVERY_TICK_MS = 5 * 60 * 1000;
 
 export default function App() {
-  const [handle, setHandle] = useState("Cipher");
+  const [handle, setHandle] = useState("Dean");
   const [data, setData] = useState<Bootstrap | null>(null);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<TabKey>("overview");
+  const [tab, setTab] = useState<TabKey>("crimes");
+  const [clockMs, setClockMs] = useState(Date.now());
   const [crewName, setCrewName] = useState("Neon Syndicate");
   const [crewTag, setCrewTag] = useState("NS");
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [chatBody, setChatBody] = useState("");
-  const [listingItem, setListingItem] = useState("consumable-1");
-  const [listingQty, setListingQty] = useState("1");
-  const [listingPrice, setListingPrice] = useState("150");
-  const [clockMs, setClockMs] = useState(Date.now());
 
   const load = async () => {
     setError("");
@@ -66,16 +70,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
+    const refreshTimer = window.setInterval(() => {
       refresh().catch(() => undefined);
     }, 60_000);
-    return () => window.clearInterval(timer);
+    const clockTimer = window.setInterval(() => setClockMs(Date.now()), 1000);
+    return () => {
+      window.clearInterval(refreshTimer);
+      window.clearInterval(clockTimer);
+    };
   }, [handle]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setClockMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const runAction = async (action: any) => {
     try {
@@ -108,7 +111,10 @@ export default function App() {
   const invite = async (targetHandle: string) => {
     if (!data?.crew) return;
     try {
-      const result = await apiCall(`/api/demo/${handle}/crews/${data.crew.id}/invites`, { method: "POST", body: JSON.stringify({ targetHandle }) });
+      const result = await apiCall(`/api/demo/${handle}/crews/${data.crew.id}/invites`, {
+        method: "POST",
+        body: JSON.stringify({ targetHandle }),
+      });
       setData(result.bootstrap);
     } catch (e: any) {
       setError(e.message);
@@ -117,7 +123,10 @@ export default function App() {
 
   const respondInvite = async (inviteId: string, accept: boolean) => {
     try {
-      const result = await apiCall(`/api/demo/${handle}/invites/${inviteId}/respond`, { method: "POST", body: JSON.stringify({ accept }) });
+      const result = await apiCall(`/api/demo/${handle}/invites/${inviteId}/respond`, {
+        method: "POST",
+        body: JSON.stringify({ accept }),
+      });
       setData(result.bootstrap);
     } catch (e: any) {
       setError(e.message);
@@ -127,19 +136,12 @@ export default function App() {
   const postMessage = async () => {
     if (!data?.crew) return;
     try {
-      const result = await apiCall(`/api/demo/${handle}/crews/${data.crew.id}/chat`, { method: "POST", body: JSON.stringify({ body: chatBody }) });
+      const result = await apiCall(`/api/demo/${handle}/crews/${data.crew.id}/chat`, {
+        method: "POST",
+        body: JSON.stringify({ body: chatBody }),
+      });
       setData(result);
       setChatBody("");
-    } catch (e: any) {
-      setError(e.message);
-    }
-  };
-
-  const createListing = async () => {
-    try {
-      const result = await apiCall(`/api/demo/${handle}/market/listings`, { method: "POST", body: JSON.stringify({ itemId: listingItem, quantity: Number(listingQty), unitPrice: Number(listingPrice) }) });
-      setData(result);
-      setTab("market");
     } catch (e: any) {
       setError(e.message);
     }
@@ -167,7 +169,6 @@ export default function App() {
     try {
       const result = await apiCall(`/api/demo/${handle}/contracts/${contractId}/claim`, { method: "POST" });
       setData(result);
-      setTab("market");
     } catch (e: any) {
       setError(e.message);
     }
@@ -176,8 +177,13 @@ export default function App() {
   const attackTerritory = async (territoryId: string) => {
     try {
       const result = await apiCall(`/api/demo/${handle}/territories/${territoryId}/attack`, { method: "POST" });
-      setData({ ...(result.bootstrap as Bootstrap), territories: result.territories, notifications: result.notifications, market: data?.market || [], contracts: data?.contracts || [] });
-      setTab("territories");
+      setData({
+        ...(result.bootstrap as Bootstrap),
+        territories: result.territories,
+        notifications: result.notifications,
+        market: data?.market || [],
+        contracts: data?.contracts || [],
+      });
     } catch (e: any) {
       setError(e.message);
     }
@@ -193,305 +199,240 @@ export default function App() {
   };
 
   const energyMeta = useMemo(() => {
-    if (!data) return { nextTickText: "--", pct: 0 };
+    if (!data) return { pct: 0, text: "--" };
     const state = data.player.state;
     const last = new Date(state.energyUpdatedAt || clockMs).getTime();
     const remainingMs = state.energy >= 100 ? 0 : Math.max(0, ENERGY_TICK_MS - ((clockMs - last) % ENERGY_TICK_MS));
     const minutes = Math.floor(remainingMs / 60000);
     const seconds = Math.floor((remainingMs % 60000) / 1000);
     return {
-      nextTickText: state.energy >= 100 ? "Full" : `+5 in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`,
-      pct: state.energy,
+      pct: Math.max(0, Math.min(100, Number(state.energy || 0))),
+      text: state.energy >= 100 ? "Full" : `Next +5 in: ${minutes}m ${String(seconds).padStart(2, "0")}s`,
     };
   }, [data, clockMs]);
 
   const braveryMeta = useMemo(() => {
-    if (!data) return { nextTickText: "--", pct: 0 };
+    if (!data) return { pct: 0, text: "--" };
     const state = data.player.state;
     const last = new Date(state.braveryUpdatedAt || clockMs).getTime();
     const remainingMs = state.bravery >= 20 ? 0 : Math.max(0, BRAVERY_TICK_MS - ((clockMs - last) % BRAVERY_TICK_MS));
     const minutes = Math.floor(remainingMs / 60000);
     const seconds = Math.floor((remainingMs % 60000) / 1000);
     return {
-      nextTickText: state.bravery >= 20 ? "Full" : `+1 in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`,
       pct: Math.max(0, Math.min(100, (Number(state.bravery || 0) / 20) * 100)),
+      text: state.bravery >= 20 ? "Full" : `Next +1 in: ${minutes}m ${String(seconds).padStart(2, "0")}s`,
     };
   }, [data, clockMs]);
 
   if (!data) {
-    return <div style={{ minHeight: "100vh", background: "#05070b", color: "white", padding: 24, fontFamily: "Inter, system-ui, sans-serif" }}>Loading city grid…</div>;
+    return <div style={loadingStyle}>Loading crime grid…</div>;
   }
 
   const state = data.player.state;
+  const activeCrimeCards = [
+    { id: "pick", title: "Pickpocket", desc: "Snatch a wallet from an unsuspecting mark.", cost: "4 bravery" },
+    { id: "boost", title: "Boost Car", desc: "Jack a parked vehicle and move it before the heat spikes.", cost: "8 bravery" },
+  ];
 
   return (
     <div style={pageStyle}>
-      <div style={shellStyle}>
+      <div style={frameStyle}>
         <aside style={leftRailStyle}>
-          <div style={brandCardStyle}>
-            <div style={{ fontSize: 11, letterSpacing: "0.24em", color: "#7dd3fc", textTransform: "uppercase" }}>Metro Syndicate</div>
-            <div style={{ marginTop: 8, fontSize: 28, fontWeight: 800 }}>Underworld Ops</div>
-            <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 13 }}>Torn-style command layout with a sharper 2026 finish.</div>
-          </div>
-
-          <div style={sidebarPanelStyle}>
-            <div style={sectionLabelStyle}>Navigation</div>
-            <div style={{ display: "grid", gap: 8 }}>
-              {TABS.map(([key, label]) => (
-                <button key={key} onClick={() => setTab(key)} style={tab === key ? navActiveStyle : navButtonStyle}>{label}</button>
-              ))}
-            </div>
-          </div>
-
-          <div style={sidebarPanelStyle}>
-            <div style={sectionLabelStyle}>Identity</div>
-            <input value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="handle" style={inputStyle} />
-            <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-              <button onClick={load} style={buttonPrimary}>Load handle</button>
-              <button onClick={refresh} style={buttonGhost}>Refresh</button>
-            </div>
-          </div>
+          {TABS.map((item) => (
+            <button key={item.key} onClick={() => setTab(item.key)} style={item.key === tab ? navActiveStyle : navButtonStyle}>
+              <span style={navIconStyle}>{item.icon}</span>
+              <span>{item.label}</span>
+              {item.key === "inbox" && data.notifications.some((n) => !n.readAt) ? <span style={badgeStyle}>{data.notifications.filter((n) => !n.readAt).length}</span> : null}
+            </button>
+          ))}
+          <div style={streetFooterStyle}>Metro Syndicate • city feed online</div>
         </aside>
 
-        <main style={mainStyle}>
-          <header style={heroStyle}>
-            <div>
-              <div style={{ fontSize: 12, letterSpacing: "0.2em", color: "#7dd3fc", textTransform: "uppercase" }}>City status</div>
-              <h1 style={{ margin: "10px 0 6px", fontSize: 34 }}>Welcome back, {data.player.handle}</h1>
-              <div style={{ color: "#94a3b8" }}>Crews, territories, contracts, inbox, and player actions from one command desk.</div>
-            </div>
-            <div style={heroStatsWrapStyle}>
-              <MiniStat label="Cash" value={state.cash} />
-              <MiniStat label="Bank" value={state.bank} />
-              <MiniStat label="Respect" value={state.respect} />
-              <MiniStat label="Bravery" value={`${state.bravery}/20`} />
-            </div>
-          </header>
-
-          {error ? <div style={{ color: "#f87171", padding: "0 4px" }}>{error}</div> : null}
-
-          {tab === "overview" ? (
-            <div style={contentGridStyle}>
-              <Panel title="Character">
-                <StatRow label="Health" value={state.health} />
-                <StatRow label="Strength" value={state.strength} />
-                <StatRow label="Speed" value={state.speed} />
-                <StatRow label="Defense" value={state.defense} />
-                <StatRow label="Wins" value={state.wins} />
-                <StatRow label="Losses" value={state.losses} />
-              </Panel>
-              <Panel title="Quick actions">
-                <ActionButton onClick={() => runAction({ type: "work" })} label="Work shift" />
-                <ActionButton onClick={() => runAction({ type: "crime", crimeId: "pick" })} label="Lift wallet" ghost />
-                <ActionButton onClick={() => runAction({ type: "fightRival", rivalId: "dockhand" })} label="Fight dockhand" ghost />
-                <ActionButton onClick={() => runAction({ type: "recover" })} label="Recover" ghost />
-              </Panel>
-              <Panel title="Notifications">
-                {data.notifications.slice(0, 6).map((notification) => (
-                  <div key={notification.id} style={listRowStyle}>
-                    <div style={{ fontWeight: 700 }}>{notification.title}</div>
-                    <div style={{ color: "#94a3b8", fontSize: 13 }}>{notification.body}</div>
-                  </div>
-                ))}
-              </Panel>
-            </div>
-          ) : null}
+        <main style={centerStyle}>
+          <div style={titleBarStyle}>{titleForTab(tab)}</div>
+          {error ? <div style={errorStyle}>{error}</div> : null}
 
           {tab === "crimes" ? (
-            <div style={contentGridStyle}>
-              <Panel title="Street work">
-                <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 4 }}>Crimes consume bravery. Bravery regenerates at 1 every 5 minutes.</div>
-                <ActionButton onClick={() => runAction({ type: "crime", crimeId: "pick" })} label="Lift wallet • 4 bravery" />
-                <ActionButton onClick={() => runAction({ type: "crime", crimeId: "boost" })} label="Boost car • 8 bravery" ghost />
-                <ActionButton onClick={() => runAction({ type: "fightRival", rivalId: "dockhand" })} label="Fight dockhand" ghost />
-              </Panel>
-              <Panel title="Travel and setup">
-                <ActionButton onClick={() => runAction({ type: "travel", cityId: "iron" })} label="Travel to Ironport" />
-                <ActionButton onClick={() => runAction({ type: "buyItem", itemId: "utility-1" })} label="Buy Signal Rig" ghost />
-                <ActionButton onClick={() => runAction({ type: "buyItem", itemId: "consumable-1" })} label="Buy Stim Drink" ghost />
-              </Panel>
-            </div>
+            <SectionCard title="Petty Crimes">
+              {activeCrimeCards.map((crime) => (
+                <div key={crime.id} style={crimeRowStyle}>
+                  <div>
+                    <div style={crimeTitleStyle}>{crime.title}</div>
+                    <div style={crimeDescStyle}>{crime.desc}</div>
+                    <div style={crimeMetaStyle}>Cost: {crime.cost}</div>
+                  </div>
+                  <button onClick={() => runAction({ type: "crime", crimeId: crime.id })} style={attemptButtonStyle}>Attempt</button>
+                </div>
+              ))}
+              <div style={summaryBoxStyle}>
+                <div>Crime Success: {state.wins}</div>
+                <div>Crime Failures: {state.losses}</div>
+              </div>
+            </SectionCard>
           ) : null}
 
-          {tab === "gym" ? (
-            <div style={contentGridStyle}>
-              <Panel title="Training floor">
-                <ActionButton onClick={() => runAction({ type: "train", stat: "strength" })} label="Train strength" />
-                <ActionButton onClick={() => runAction({ type: "train", stat: "speed" })} label="Train speed" ghost />
-                <ActionButton onClick={() => runAction({ type: "train", stat: "defense" })} label="Train defense" ghost />
-              </Panel>
-              <Panel title="Recovery">
-                <div style={{ color: "#94a3b8", marginBottom: 10 }}>Energy regenerates by 5 every 10 minutes. Bravery regenerates by 1 every 5 minutes. Recover resets health, energy, and bravery.</div>
-                <ActionButton onClick={() => runAction({ type: "recover" })} label="Manual recover" />
-              </Panel>
-            </div>
+          {tab === "overview" ? (
+            <SectionCard title="City Overview">
+              <div style={summaryGridStyle}>
+                <MiniTile label="Cash" value={`$${state.cash}`} />
+                <MiniTile label="Bank" value={`$${state.bank}`} />
+                <MiniTile label="Respect" value={state.respect} />
+                <MiniTile label="Heat" value={state.heat} />
+              </div>
+              <div style={buttonStripStyle}>
+                <button onClick={() => runAction({ type: "work" })} style={attemptButtonStyle}>Work</button>
+                <button onClick={() => runAction({ type: "fightRival", rivalId: "dockhand" })} style={attemptButtonStyle}>Fight</button>
+                <button onClick={() => runAction({ type: "recover" })} style={attemptButtonStyle}>Recover</button>
+              </div>
+            </SectionCard>
           ) : null}
 
-          {tab === "crew" ? (
-            <div style={contentGridStyle}>
-              <Panel title="Crew HQ">
-                {!data.crew ? (
-                  <>
-                    <input value={crewName} onChange={(e) => setCrewName(e.target.value)} placeholder="crew name" style={inputStyle} />
-                    <input value={crewTag} onChange={(e) => setCrewTag(e.target.value)} placeholder="tag" style={inputStyle} />
-                    <button onClick={createCrew} style={buttonPrimary}>Found crew</button>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize: 22, fontWeight: 800 }}>{data.crew.name} {data.crew.tag ? `[${data.crew.tag}]` : ""}</div>
-                    <div style={{ color: "#94a3b8" }}>Crew cash: {data.crew.cash}</div>
-                    <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-                      {data.crew.roster.map((member) => <div key={member.id} style={listRowStyle}>{member.handle}</div>)}
-                    </div>
-                  </>
-                )}
-              </Panel>
-              <Panel title="Invite players">
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search handle" style={{ ...inputStyle, flex: 1 }} />
-                  <button onClick={searchPeople} style={buttonGhost}>Search</button>
-                </div>
-                <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                  {results.map((row) => (
-                    <div key={row.id} style={listRowStyle}>
-                      <div>
-                        <div style={{ fontWeight: 700 }}>{row.handle}</div>
-                        <div style={{ color: "#94a3b8", fontSize: 12 }}>{row.crewId ? "Already in crew" : "Available"}</div>
-                      </div>
-                      <button onClick={() => invite(row.handle)} style={buttonPrimary} disabled={!data.crew || !!row.crewId}>Invite</button>
-                    </div>
-                  ))}
-                </div>
-              </Panel>
-              <Panel title="Crew chat">
-                {!data.crew ? <div style={{ color: "#94a3b8" }}>Join or found a crew to use chat.</div> : (
-                  <>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <input value={chatBody} onChange={(e) => setChatBody(e.target.value)} placeholder="message" style={{ ...inputStyle, flex: 1 }} />
-                      <button onClick={postMessage} style={buttonPrimary}>Send</button>
-                    </div>
-                    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                      {data.crew.messages.map((msg) => (
-                        <div key={msg.id} style={listRowStyle}>
-                          <div style={{ fontWeight: 700 }}>{msg.handle}</div>
-                          <div style={{ color: "#cbd5e1", fontSize: 13 }}>{msg.body}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </Panel>
-            </div>
+          {tab === "jobs" ? (
+            <SectionCard title="Job Board">
+              <ActionRow title="Runner" desc="Small errands with low profile payouts." action={() => runAction({ type: "takeJob", jobId: "runner" })} button="Take Job" />
+              <ActionRow title="Collector" desc="Higher pressure work for better cash." action={() => runAction({ type: "takeJob", jobId: "collector" })} button="Take Job" />
+              <ActionRow title="Operator" desc="Heavy jobs for connected players." action={() => runAction({ type: "takeJob", jobId: "operator" })} button="Take Job" />
+            </SectionCard>
           ) : null}
 
           {tab === "market" ? (
-            <div style={contentGridStyle}>
-              <Panel title="Create listing">
-                <input value={listingItem} onChange={(e) => setListingItem(e.target.value)} style={inputStyle} />
-                <input value={listingQty} onChange={(e) => setListingQty(e.target.value)} style={inputStyle} />
-                <input value={listingPrice} onChange={(e) => setListingPrice(e.target.value)} style={inputStyle} />
-                <button onClick={createListing} style={buttonPrimary}>List item</button>
-              </Panel>
-              <Panel title="Market board">
-                {data.market.map((listing) => (
-                  <div key={listing.id} style={listRowStyle}>
+            <SectionCard title="Market Listings">
+              {data.market.length === 0 ? <div style={emptyStyle}>No active listings right now.</div> : null}
+              {data.market.map((listing) => (
+                <div key={listing.id} style={crimeRowStyle}>
+                  <div>
+                    <div style={crimeTitleStyle}>{listing.itemId}</div>
+                    <div style={crimeDescStyle}>{listing.quantity} units • ${listing.unitPrice} each</div>
+                  </div>
+                  <div style={buttonStackStyle}>
+                    <button onClick={() => buyListing(listing.id)} style={attemptButtonStyle}>Buy</button>
+                    {listing.playerId === data.player.id ? <button onClick={() => cancelListing(listing.id)} style={sideActionStyle}>Cancel</button> : null}
+                  </div>
+                </div>
+              ))}
+              <div style={subTitleStyle}>Contracts</div>
+              {data.contracts.map((contract) => (
+                <ActionRow key={contract.id} title={contract.title} desc={contract.body} action={() => claimContract(contract.id)} button="Claim" />
+              ))}
+            </SectionCard>
+          ) : null}
+
+          {tab === "crew" ? (
+            <SectionCard title="Crew Control">
+              {!data.crew ? (
+                <div style={crewBuildStyle}>
+                  <input value={crewName} onChange={(e) => setCrewName(e.target.value)} placeholder="Crew name" style={inputStyle} />
+                  <input value={crewTag} onChange={(e) => setCrewTag(e.target.value)} placeholder="Tag" style={inputStyle} />
+                  <button onClick={createCrew} style={attemptButtonStyle}>Found Crew</button>
+                </div>
+              ) : (
+                <>
+                  <div style={crewHeaderStyle}>{data.crew.name} {data.crew.tag ? `[${data.crew.tag}]` : ""}</div>
+                  <div style={crimeMetaStyle}>Crew cash: ${data.crew.cash}</div>
+                  <div style={listBoxStyle}>{data.crew.roster.map((member) => <div key={member.id} style={listRowStyle}>{member.handle}</div>)}</div>
+                  <div style={subTitleStyle}>Crew Chat</div>
+                  <div style={listBoxStyle}>{data.crew.messages.map((message) => <div key={message.id} style={chatLineStyle}><strong>{message.handle}:</strong> {message.body}</div>)}</div>
+                  <div style={chatInputWrapStyle}>
+                    <input value={chatBody} onChange={(e) => setChatBody(e.target.value)} placeholder="Send a crew message" style={{ ...inputStyle, flex: 1 }} />
+                    <button onClick={postMessage} style={attemptButtonStyle}>Send</button>
+                  </div>
+                </>
+              )}
+              <div style={subTitleStyle}>Player Search</div>
+              <div style={chatInputWrapStyle}>
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search handle" style={{ ...inputStyle, flex: 1 }} />
+                <button onClick={searchPeople} style={attemptButtonStyle}>Search</button>
+              </div>
+              <div style={listBoxStyle}>
+                {results.map((row) => (
+                  <div key={row.id} style={crimeRowStyle}>
                     <div>
-                      <div style={{ fontWeight: 700 }}>{listing.itemId}</div>
-                      <div style={{ color: "#94a3b8", fontSize: 12 }}>{listing.quantity} units • {listing.unitPrice} each</div>
+                      <div style={crimeTitleStyle}>{row.handle}</div>
+                      <div style={crimeDescStyle}>{row.crewId ? "Already in a crew" : "Available to invite"}</div>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => buyListing(listing.id)} style={buttonPrimary}>Buy</button>
-                      {listing.playerId === data.player.id ? <button onClick={() => cancelListing(listing.id)} style={buttonGhost}>Cancel</button> : null}
-                    </div>
+                    <button onClick={() => invite(row.handle)} style={attemptButtonStyle} disabled={!data.crew || !!row.crewId}>Invite</button>
                   </div>
                 ))}
-              </Panel>
-              <Panel title="Contracts">
-                {data.contracts.map((contract) => (
-                  <div key={contract.id} style={listRowStyle}>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>{contract.title}</div>
-                      <div style={{ color: "#cbd5e1", fontSize: 13 }}>{contract.body}</div>
-                    </div>
-                    <button onClick={() => claimContract(contract.id)} style={buttonPrimary}>Claim</button>
-                  </div>
-                ))}
-              </Panel>
-            </div>
+              </div>
+            </SectionCard>
           ) : null}
 
           {tab === "territories" ? (
-            <Panel title="Territory desk">
+            <SectionCard title="Territory Control">
               {data.territories.map((territory) => (
-                <div key={territory.id} style={listRowStyle}>
+                <div key={territory.id} style={crimeRowStyle}>
                   <div>
-                    <div style={{ fontWeight: 700 }}>{territory.name}</div>
-                    <div style={{ color: "#94a3b8", fontSize: 12 }}>{territory.cityId} • income {territory.baseIncome}</div>
-                    <div style={{ color: "#cbd5e1", fontSize: 13 }}>{territory.control ? `${territory.control.crewName} holding (defense ${territory.control.defense})` : "Unclaimed"}</div>
+                    <div style={crimeTitleStyle}>{territory.name}</div>
+                    <div style={crimeDescStyle}>{territory.cityId} • income {territory.baseIncome}</div>
+                    <div style={crimeMetaStyle}>{territory.control ? `${territory.control.crewName} holding • def ${territory.control.defense}` : "Unclaimed"}</div>
                   </div>
-                  <button onClick={() => attackTerritory(territory.id)} style={buttonPrimary}>Attack</button>
+                  <button onClick={() => attackTerritory(territory.id)} style={attemptButtonStyle}>Attack</button>
                 </div>
               ))}
-            </Panel>
+            </SectionCard>
           ) : null}
 
           {tab === "inbox" ? (
-            <Panel title="Inbox">
-              {data.invites.length > 0 ? data.invites.map((invite) => (
-                <div key={invite.id} style={listRowStyle}>
+            <SectionCard title="Inbox">
+              {data.invites.map((invite) => (
+                <div key={invite.id} style={crimeRowStyle}>
                   <div>
-                    <div style={{ fontWeight: 700 }}>{invite.crewName}</div>
-                    <div style={{ color: "#94a3b8", fontSize: 12 }}>{invite.crewTag || "No tag"}</div>
+                    <div style={crimeTitleStyle}>{invite.crewName}</div>
+                    <div style={crimeDescStyle}>{invite.crewTag || "No tag"}</div>
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => respondInvite(invite.id, true)} style={buttonPrimary}>Accept</button>
-                    <button onClick={() => respondInvite(invite.id, false)} style={buttonGhost}>Decline</button>
+                  <div style={buttonStackStyle}>
+                    <button onClick={() => respondInvite(invite.id, true)} style={attemptButtonStyle}>Accept</button>
+                    <button onClick={() => respondInvite(invite.id, false)} style={sideActionStyle}>Decline</button>
                   </div>
-                </div>
-              )) : null}
-              {data.notifications.map((notification) => (
-                <div key={notification.id} style={listRowStyle}>
-                  <div>
-                    <div style={{ fontWeight: 700 }}>{notification.title}</div>
-                    <div style={{ color: "#cbd5e1", fontSize: 13 }}>{notification.body}</div>
-                    <div style={{ color: "#94a3b8", fontSize: 12 }}>{notification.kind}{notification.readAt ? " • read" : " • unread"}</div>
-                  </div>
-                  {!notification.readAt ? <button onClick={() => markRead(notification.id)} style={buttonGhost}>Mark read</button> : null}
                 </div>
               ))}
-            </Panel>
+              {data.notifications.map((notification) => (
+                <div key={notification.id} style={crimeRowStyle}>
+                  <div>
+                    <div style={crimeTitleStyle}>{notification.title}</div>
+                    <div style={crimeDescStyle}>{notification.body}</div>
+                  </div>
+                  {!notification.readAt ? <button onClick={() => markRead(notification.id)} style={attemptButtonStyle}>Read</button> : <span style={crimeMetaStyle}>Read</span>}
+                </div>
+              ))}
+            </SectionCard>
           ) : null}
 
           {tab === "log" ? (
-            <Panel title="Activity log">
-              {state.log.map((entry: string, index: number) => <div key={index} style={listRowStyle}>{entry}</div>)}
-            </Panel>
+            <SectionCard title="Street Feed">
+              <div style={listBoxStyle}>{state.log.map((entry: string, index: number) => <div key={index} style={listRowStyle}>{entry}</div>)}</div>
+            </SectionCard>
           ) : null}
         </main>
 
         <aside style={rightRailStyle}>
-          <div style={rightCardStyle}>
-            <div style={sectionLabelStyle}>Status</div>
-            <div style={{ fontSize: 24, fontWeight: 800 }}>{state.energy}/100</div>
-            <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 10 }}>Energy</div>
-            <div style={meterTrackStyle}><div style={{ ...meterFillStyle, width: `${energyMeta.pct}%` }} /></div>
-            <div style={{ marginTop: 8, color: "#7dd3fc", fontSize: 13 }}>{energyMeta.nextTickText}</div>
+          <div style={profileCardStyle}>
+            <div style={avatarWrapStyle}><div style={avatarStyle}>{String(data.player.handle).charAt(0).toUpperCase()}</div></div>
+            <div style={profileMetaStyle}>
+              <div style={playerNameStyle}>{data.player.handle}</div>
+              <div style={playerLevelStyle}>Level: 1</div>
+            </div>
           </div>
 
-          <div style={rightCardStyle}>
-            <div style={sectionLabelStyle}>Bravery</div>
-            <div style={{ fontSize: 24, fontWeight: 800 }}>{state.bravery}/20</div>
-            <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 10 }}>Crime resource</div>
-            <div style={meterTrackStyle}><div style={{ ...meterFillStyle, width: `${braveryMeta.pct}%` }} /></div>
-            <div style={{ marginTop: 8, color: "#7dd3fc", fontSize: 13 }}>{braveryMeta.nextTickText}</div>
+          <div style={statListCardStyle}>
+            <StatLine label="Cash" value={`$${state.cash}`} />
+            <StatLine label="Bank" value={`$${state.bank}`} />
+            <StatLine label="City Rep" value={state.respect} />
           </div>
 
-          <div style={rightCardStyle}>
-            <div style={sectionLabelStyle}>Profile</div>
-            <StatRow label="City" value={state.city} compact />
-            <StatRow label="Job" value={state.job} compact />
-            <StatRow label="Crew" value={data.crew?.name || "None"} compact />
-            <StatRow label="Health" value={state.health} compact />
+          <StatusBar label="Health" value={`${state.health}/100`} pct={state.health} tone="red" />
+          <StatusBar label="Energy" value={`${state.energy}/100`} pct={energyMeta.pct} tone="blue" sub={energyMeta.text} />
+          <StatusBar label="Bravery" value={`${state.bravery}/20`} pct={braveryMeta.pct} tone="amber" sub={braveryMeta.text} />
+
+          <div style={metaBoxStyle}>
+            <MetaLine label="Rank" value="Rookie" />
+            <MetaLine label="Location" value={state.city} />
+            <MetaLine label="Job" value={state.job} />
+          </div>
+
+          <div style={footerActionsStyle}>
+            <button onClick={() => runAction({ type: "recover" })} style={bigSideButtonStyle}>Hospital</button>
+            <button onClick={() => runAction({ type: "travel", cityId: state.city === "apex" ? "iron" : "apex" })} style={bigSideButtonStyle}>Travel</button>
           </div>
         </aside>
       </div>
@@ -499,41 +440,129 @@ export default function App() {
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section style={panelStyle}><div style={{ fontSize: 12, letterSpacing: "0.18em", color: "#7dd3fc", textTransform: "uppercase", marginBottom: 14 }}>{title}</div><div style={{ display: "grid", gap: 10 }}>{children}</div></section>;
+function titleForTab(tab: TabKey) {
+  return {
+    overview: "Home",
+    crimes: "Crimes",
+    jobs: "Jobs",
+    market: "Market",
+    crew: "Crews",
+    territories: "Territory",
+    inbox: "Inbox",
+    log: "Street Feed",
+  }[tab];
 }
 
-function MiniStat({ label, value }: { label: string; value: string | number }) {
-  return <div style={miniStatStyle}><div style={{ color: "#94a3b8", fontSize: 12 }}>{label}</div><div style={{ fontWeight: 800, fontSize: 20 }}>{value}</div></div>;
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section style={sectionStyle}>
+      <div style={sectionHeaderStyle}>{title}</div>
+      <div style={sectionBodyStyle}>{children}</div>
+    </section>
+  );
 }
 
-function StatRow({ label, value, compact = false }: { label: string; value: string | number; compact?: boolean }) {
-  return <div style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: compact ? "6px 0" : "10px 0", borderBottom: compact ? "1px solid rgba(148,163,184,0.12)" : "1px solid rgba(148,163,184,0.1)" }}><span style={{ color: "#94a3b8" }}>{label}</span><span style={{ fontWeight: 700 }}>{value}</span></div>;
+function ActionRow({ title, desc, action, button }: { title: string; desc: string; action: () => void; button: string }) {
+  return (
+    <div style={crimeRowStyle}>
+      <div>
+        <div style={crimeTitleStyle}>{title}</div>
+        <div style={crimeDescStyle}>{desc}</div>
+      </div>
+      <button onClick={action} style={attemptButtonStyle}>{button}</button>
+    </div>
+  );
 }
 
-function ActionButton({ onClick, label, ghost = false }: { onClick: () => void; label: string; ghost?: boolean }) {
-  return <button onClick={onClick} style={ghost ? buttonGhost : buttonPrimary}>{label}</button>;
+function MiniTile({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div style={miniTileStyle}>
+      <div style={miniTileLabelStyle}>{label}</div>
+      <div style={miniTileValueStyle}>{value}</div>
+    </div>
+  );
 }
 
-const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "linear-gradient(180deg,#05070b 0%,#09111d 100%)", color: "#f8fafc", fontFamily: "Inter, system-ui, sans-serif", padding: 18 };
-const shellStyle: React.CSSProperties = { maxWidth: 1680, margin: "0 auto", display: "grid", gridTemplateColumns: "260px minmax(0,1fr) 300px", gap: 18, alignItems: "start" };
-const leftRailStyle: React.CSSProperties = { display: "grid", gap: 14, position: "sticky", top: 18 };
-const rightRailStyle: React.CSSProperties = { display: "grid", gap: 14, position: "sticky", top: 18 };
-const mainStyle: React.CSSProperties = { display: "grid", gap: 16, minWidth: 0 };
-const brandCardStyle: React.CSSProperties = { borderRadius: 24, padding: 18, background: "linear-gradient(180deg,rgba(14,165,233,0.14),rgba(15,23,42,0.92))", border: "1px solid rgba(125,211,252,0.22)", boxShadow: "0 16px 48px rgba(0,0,0,0.35)" };
-const sidebarPanelStyle: React.CSSProperties = { borderRadius: 22, padding: 16, background: "rgba(15,23,42,0.86)", border: "1px solid rgba(148,163,184,0.12)" };
-const rightCardStyle: React.CSSProperties = { borderRadius: 22, padding: 16, background: "rgba(15,23,42,0.9)", border: "1px solid rgba(148,163,184,0.12)" };
-const heroStyle: React.CSSProperties = { borderRadius: 24, padding: 20, background: "linear-gradient(135deg,rgba(15,23,42,0.94),rgba(30,41,59,0.88))", border: "1px solid rgba(148,163,184,0.12)", display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", flexWrap: "wrap" };
-const heroStatsWrapStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(2,minmax(110px,1fr))", gap: 10 };
-const miniStatStyle: React.CSSProperties = { borderRadius: 18, padding: 14, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(148,163,184,0.12)", minWidth: 110 };
-const panelStyle: React.CSSProperties = { borderRadius: 24, padding: 18, background: "rgba(15,23,42,0.88)", border: "1px solid rgba(148,163,184,0.12)", boxShadow: "0 12px 36px rgba(0,0,0,0.22)" };
-const contentGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 16 };
-const sectionLabelStyle: React.CSSProperties = { fontSize: 11, letterSpacing: "0.22em", textTransform: "uppercase", color: "#7dd3fc", marginBottom: 10 };
-const listRowStyle: React.CSSProperties = { borderRadius: 16, padding: 12, background: "rgba(255,255,255,0.025)", border: "1px solid rgba(148,163,184,0.1)", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" };
-const inputStyle: React.CSSProperties = { minHeight: 42, borderRadius: 14, border: "1px solid rgba(148,163,184,0.16)", background: "rgba(255,255,255,0.04)", color: "white", padding: "0 12px", width: "100%", boxSizing: "border-box" };
-const buttonPrimary: React.CSSProperties = { minHeight: 42, borderRadius: 14, border: "1px solid rgba(125,211,252,0.2)", background: "linear-gradient(180deg,#e2e8f0,#cbd5e1)", color: "#020617", fontWeight: 800, padding: "0 14px", cursor: "pointer", whiteSpace: "nowrap" };
-const buttonGhost: React.CSSProperties = { minHeight: 42, borderRadius: 14, border: "1px solid rgba(148,163,184,0.16)", background: "rgba(255,255,255,0.03)", color: "white", fontWeight: 700, padding: "0 14px", cursor: "pointer", whiteSpace: "nowrap" };
-const navButtonStyle: React.CSSProperties = { ...buttonGhost, width: "100%", justifyContent: "flex-start", textAlign: "left" };
-const navActiveStyle: React.CSSProperties = { ...buttonPrimary, width: "100%", justifyContent: "flex-start", textAlign: "left" };
-const meterTrackStyle: React.CSSProperties = { height: 10, width: "100%", borderRadius: 999, background: "rgba(148,163,184,0.18)", overflow: "hidden" };
-const meterFillStyle: React.CSSProperties = { height: "100%", borderRadius: 999, background: "linear-gradient(90deg,#38bdf8,#22d3ee)" };
+function StatusBar({ label, value, pct, tone, sub }: { label: string; value: string; pct: number; tone: "red" | "blue" | "amber"; sub?: string }) {
+  const fill = tone === "red" ? "linear-gradient(90deg,#651212,#d93b32)" : tone === "blue" ? "linear-gradient(90deg,#12386d,#1e74dd)" : "linear-gradient(90deg,#6a3d0d,#d98c23)";
+  return (
+    <div style={barCardStyle}>
+      <div style={barTopStyle}>
+        <div style={barLabelStyle}>{label}</div>
+        <div style={barValueStyle}>{value}</div>
+      </div>
+      <div style={barTrackStyle}><div style={{ ...barFillStyle, width: `${Math.max(0, Math.min(100, pct))}%`, background: fill }} /></div>
+      {sub ? <div style={barSubStyle}>{sub}</div> : null}
+    </div>
+  );
+}
+
+function StatLine({ label, value }: { label: string; value: string | number }) {
+  return <div style={statLineStyle}><span>{label}:</span><strong>{value}</strong></div>;
+}
+
+function MetaLine({ label, value }: { label: string; value: string | number }) {
+  return <div style={metaLineStyle}><span>{label}:</span><strong>{value}</strong></div>;
+}
+
+const steel = "linear-gradient(180deg,#282b31 0%,#181b1f 100%)";
+const panelBorder = "1px solid #3d4046";
+const insetShadow = "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.45), 0 10px 24px rgba(0,0,0,0.38)";
+
+const loadingStyle: React.CSSProperties = { minHeight: "100vh", background: "#111317", color: "#f4f4f4", display: "grid", placeItems: "center", fontFamily: "Inter, Arial, sans-serif" };
+const pageStyle: React.CSSProperties = { minHeight: "100vh", background: "radial-gradient(circle at bottom left,#2b1a0c 0%,#131519 18%,#0a0c0f 100%)", color: "#f2f2f2", fontFamily: "Inter, Arial, sans-serif", padding: 18 };
+const frameStyle: React.CSSProperties = { maxWidth: 1540, margin: "0 auto", display: "grid", gridTemplateColumns: "300px minmax(0,1fr) 360px", gap: 18, border: "1px solid #3d4046", background: "#16181d", boxShadow: "0 30px 80px rgba(0,0,0,0.45)", padding: 16 };
+const leftRailStyle: React.CSSProperties = { display: "grid", gap: 8, alignContent: "start" };
+const navButtonStyle: React.CSSProperties = { minHeight: 68, display: "flex", alignItems: "center", gap: 14, border: panelBorder, background: steel, color: "#ececec", borderRadius: 4, padding: "0 18px", fontSize: 19, cursor: "pointer", boxShadow: insetShadow, textAlign: "left" };
+const navActiveStyle: React.CSSProperties = { ...navButtonStyle, boxShadow: "0 0 0 2px rgba(255,255,255,0.18) inset, 0 10px 24px rgba(0,0,0,0.38)", background: "linear-gradient(180deg,#31353c 0%,#1c2025 100%)" };
+const navIconStyle: React.CSSProperties = { width: 28, textAlign: "center", fontSize: 24, opacity: 0.95 };
+const badgeStyle: React.CSSProperties = { marginLeft: "auto", color: "#ffb258", fontWeight: 800 };
+const streetFooterStyle: React.CSSProperties = { minHeight: 120, marginTop: 10, border: panelBorder, background: "linear-gradient(180deg,#171a1e 0%,#101215 100%)", boxShadow: insetShadow, display: "flex", alignItems: "end", justifyContent: "center", padding: 14, color: "#9f815e", fontSize: 13, textTransform: "uppercase", letterSpacing: "0.12em" };
+const centerStyle: React.CSSProperties = { minWidth: 0, display: "grid", gap: 14, alignContent: "start" };
+const titleBarStyle: React.CSSProperties = { border: panelBorder, background: steel, boxShadow: insetShadow, minHeight: 72, display: "flex", alignItems: "center", padding: "0 22px", fontSize: 30, fontWeight: 800, letterSpacing: "0.01em" };
+const errorStyle: React.CSSProperties = { color: "#ff8b8b", padding: "0 4px" };
+const sectionStyle: React.CSSProperties = { border: panelBorder, background: "linear-gradient(180deg,#20242a 0%,#15181d 100%)", boxShadow: insetShadow };
+const sectionHeaderStyle: React.CSSProperties = { minHeight: 62, display: "flex", alignItems: "center", padding: "0 20px", fontSize: 22, fontWeight: 800, borderBottom: panelBorder, background: "linear-gradient(180deg,#292d34 0%,#1b1f24 100%)" };
+const sectionBodyStyle: React.CSSProperties = { padding: 18, display: "grid", gap: 14 };
+const crimeRowStyle: React.CSSProperties = { border: panelBorder, background: "linear-gradient(180deg,#262a31 0%,#181b20 100%)", padding: 16, display: "flex", justifyContent: "space-between", gap: 18, alignItems: "center", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)" };
+const crimeTitleStyle: React.CSSProperties = { fontSize: 23, fontWeight: 800, marginBottom: 6 };
+const crimeDescStyle: React.CSSProperties = { fontSize: 15, color: "#d4d5d8", maxWidth: 580 };
+const crimeMetaStyle: React.CSSProperties = { marginTop: 8, color: "#a5a8ad", fontSize: 13 };
+const attemptButtonStyle: React.CSSProperties = { minWidth: 156, minHeight: 62, borderRadius: 4, border: "1px solid #62666d", background: "linear-gradient(180deg,#565b64 0%,#30343b 100%)", color: "#f0f0f0", fontSize: 20, fontWeight: 800, cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), 0 4px 10px rgba(0,0,0,0.28)" };
+const sideActionStyle: React.CSSProperties = { ...attemptButtonStyle, minWidth: 120, minHeight: 46, fontSize: 16 };
+const summaryBoxStyle: React.CSSProperties = { border: panelBorder, background: "rgba(0,0,0,0.18)", padding: 16, lineHeight: 1.8, fontSize: 16 };
+const summaryGridStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(4,minmax(120px,1fr))", gap: 12 };
+const miniTileStyle: React.CSSProperties = { border: panelBorder, background: "linear-gradient(180deg,#292d34 0%,#191c21 100%)", padding: 14, textAlign: "center" };
+const miniTileLabelStyle: React.CSSProperties = { color: "#a5a8ad", fontSize: 13, textTransform: "uppercase", letterSpacing: "0.1em" };
+const miniTileValueStyle: React.CSSProperties = { marginTop: 8, fontSize: 24, fontWeight: 800 };
+const buttonStripStyle: React.CSSProperties = { display: "flex", gap: 12, flexWrap: "wrap" };
+const rightRailStyle: React.CSSProperties = { display: "grid", gap: 12, alignContent: "start" };
+const profileCardStyle: React.CSSProperties = { border: panelBorder, background: steel, boxShadow: insetShadow, display: "grid", gridTemplateColumns: "112px 1fr", gap: 14, padding: 14 };
+const avatarWrapStyle: React.CSSProperties = { border: panelBorder, background: "linear-gradient(180deg,#4a5764 0%,#1e2932 100%)", minHeight: 112, display: "grid", placeItems: "center" };
+const avatarStyle: React.CSSProperties = { width: 74, height: 74, borderRadius: "50%", background: "linear-gradient(180deg,#0b0d10 0%,#273241 100%)", color: "#f5f5f5", display: "grid", placeItems: "center", fontSize: 34, fontWeight: 800 };
+const profileMetaStyle: React.CSSProperties = { display: "grid", alignContent: "center", gap: 8 };
+const playerNameStyle: React.CSSProperties = { fontSize: 28, fontWeight: 900 };
+const playerLevelStyle: React.CSSProperties = { fontSize: 18, color: "#e3e3e3" };
+const statListCardStyle: React.CSSProperties = { border: panelBorder, background: steel, boxShadow: insetShadow, padding: 16, display: "grid", gap: 12 };
+const statLineStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", fontSize: 17 };
+const barCardStyle: React.CSSProperties = { border: panelBorder, background: steel, boxShadow: insetShadow, padding: 12 };
+const barTopStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, fontSize: 18, fontWeight: 800 };
+const barLabelStyle: React.CSSProperties = { fontSize: 18, fontWeight: 800 };
+const barValueStyle: React.CSSProperties = { fontSize: 18, fontWeight: 900 };
+const barTrackStyle: React.CSSProperties = { height: 38, background: "#121418", border: "1px solid #41454d", overflow: "hidden" };
+const barFillStyle: React.CSSProperties = { height: "100%" };
+const barSubStyle: React.CSSProperties = { marginTop: 10, textAlign: "center", color: "#efefef", fontSize: 15 };
+const metaBoxStyle: React.CSSProperties = { border: panelBorder, background: steel, boxShadow: insetShadow, padding: 14, display: "grid", gap: 12 };
+const metaLineStyle: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, fontSize: 17 };
+const footerActionsStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
+const bigSideButtonStyle: React.CSSProperties = { minHeight: 68, border: "1px solid #62666d", background: "linear-gradient(180deg,#5d626c 0%,#31353d 100%)", color: "#f0f0f0", fontSize: 18, fontWeight: 800, cursor: "pointer", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), 0 4px 10px rgba(0,0,0,0.28)" };
+const inputStyle: React.CSSProperties = { minHeight: 48, border: "1px solid #50545b", background: "#13161a", color: "#f2f2f2", padding: "0 14px", fontSize: 16 };
+const crewBuildStyle: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr 110px 180px", gap: 12 };
+const crewHeaderStyle: React.CSSProperties = { fontSize: 24, fontWeight: 800 };
+const listBoxStyle: React.CSSProperties = { display: "grid", gap: 10 };
+const listRowStyle: React.CSSProperties = { border: panelBorder, background: "rgba(0,0,0,0.18)", padding: 12 };
+const chatLineStyle: React.CSSProperties = { ...listRowStyle, lineHeight: 1.5 };
+const chatInputWrapStyle: React.CSSProperties = { display: "flex", gap: 12 };
+const subTitleStyle: React.CSSProperties = { marginTop: 4, fontSize: 18, fontWeight: 800, color: "#f0f0f0" };
+const buttonStackStyle: React.CSSProperties = { display: "grid", gap: 8 };
+const emptyStyle: React.CSSProperties = { color: "#a8abb0", padding: 8 };
