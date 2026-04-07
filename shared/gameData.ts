@@ -5,6 +5,7 @@ export type PlayerState = {
   energy: number;
   energyUpdatedAt: string;
   bravery: number;
+  braveryUpdatedAt: string;
   health: number;
   strength: number;
   speed: number;
@@ -51,13 +52,15 @@ export const ITEMS = [
 ];
 
 export function makeInitialState(alias = "Rookie"): PlayerState {
+  const nowIso = new Date().toISOString();
   return {
     alias,
     cash: 1500,
     bank: 0,
     energy: 100,
-    energyUpdatedAt: new Date().toISOString(),
+    energyUpdatedAt: nowIso,
     bravery: 20,
+    braveryUpdatedAt: nowIso,
     health: 100,
     strength: 8,
     speed: 8,

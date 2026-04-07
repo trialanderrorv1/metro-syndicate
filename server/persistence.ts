@@ -10,31 +10,47 @@ export const prisma = new PrismaClient({ adapter });
 const ENERGY_REGEN_AMOUNT = 5;
 const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 const MAX_ENERGY = 100;
+const BRAVERY_REGEN_AMOUNT = 1;
+const BRAVERY_REGEN_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_BRAVERY = 20;
 
-function normalizePlayerState(state: PlayerState): PlayerState {
-  const safeUpdatedAt = state.energyUpdatedAt || new Date().toISOString();
-  const updatedAtMs = new Date(safeUpdatedAt).getTime();
+function normalizeTimedStat(value: number, updatedAt: string | undefined, maxValue: number, regenAmount: number, regenIntervalMs: number) {
   const nowMs = Date.now();
+  const safeUpdatedAt = updatedAt || new Date(nowMs).toISOString();
+  const updatedAtMs = new Date(safeUpdatedAt).getTime();
+
   if (!Number.isFinite(updatedAtMs)) {
-    return { ...state, energyUpdatedAt: new Date().toISOString() };
+    return { value, updatedAt: new Date(nowMs).toISOString() };
   }
 
-  if (state.energy >= MAX_ENERGY) {
-    return { ...state, energy: MAX_ENERGY, energyUpdatedAt: new Date(nowMs).toISOString() };
+  if (value >= maxValue) {
+    return { value: maxValue, updatedAt: new Date(nowMs).toISOString() };
   }
 
   const elapsed = Math.max(0, nowMs - updatedAtMs);
-  const ticks = Math.floor(elapsed / ENERGY_REGEN_INTERVAL_MS);
-  if (ticks <= 0) return state;
+  const ticks = Math.floor(elapsed / regenIntervalMs);
+  if (ticks <= 0) return { value, updatedAt: safeUpdatedAt };
 
-  const regained = ticks * ENERGY_REGEN_AMOUNT;
-  const nextEnergy = Math.min(MAX_ENERGY, state.energy + regained);
-  const nextAnchor = nextEnergy >= MAX_ENERGY ? nowMs : updatedAtMs + ticks * ENERGY_REGEN_INTERVAL_MS;
+  const regained = ticks * regenAmount;
+  const nextValue = Math.min(maxValue, value + regained);
+  const nextAnchorMs = nextValue >= maxValue ? nowMs : updatedAtMs + ticks * regenIntervalMs;
+
+  return {
+    value: nextValue,
+    updatedAt: new Date(nextAnchorMs).toISOString(),
+  };
+}
+
+function normalizePlayerState(state: PlayerState): PlayerState {
+  const energy = normalizeTimedStat(state.energy, state.energyUpdatedAt, MAX_ENERGY, ENERGY_REGEN_AMOUNT, ENERGY_REGEN_INTERVAL_MS);
+  const bravery = normalizeTimedStat(state.bravery, state.braveryUpdatedAt, MAX_BRAVERY, BRAVERY_REGEN_AMOUNT, BRAVERY_REGEN_INTERVAL_MS);
 
   return {
     ...state,
-    energy: nextEnergy,
-    energyUpdatedAt: new Date(nextAnchor).toISOString(),
+    energy: energy.value,
+    energyUpdatedAt: energy.updatedAt,
+    bravery: bravery.value,
+    braveryUpdatedAt: bravery.updatedAt,
   };
 }
 

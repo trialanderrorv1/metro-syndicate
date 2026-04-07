@@ -38,6 +38,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       next.energy = MAX_ENERGY;
       next.energyUpdatedAt = nowIso;
       next.bravery = MAX_BRAVERY;
+      next.braveryUpdatedAt = nowIso;
       next.health = clamp(next.health + 20, 0, 100);
       next.day += 1;
       push("Recovered and reset your edge.");
@@ -90,6 +91,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       const successChance = clamp(55 + next.speed + next.strength - crime.risk - next.heat / 2, 15, 92);
       const success = Math.random() * 100 <= successChance;
       next.bravery -= crime.bravery;
+      next.braveryUpdatedAt = nowIso;
       next.day += 1;
       if (success) {
         next.cash += crime.cash;

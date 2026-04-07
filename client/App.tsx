@@ -24,6 +24,9 @@ const TABS: Array<[TabKey, string]> = [
   ["log", "Log"],
 ];
 
+const ENERGY_TICK_MS = 10 * 60 * 1000;
+const BRAVERY_TICK_MS = 5 * 60 * 1000;
+
 export default function App() {
   const [handle, setHandle] = useState("Cipher");
   const [data, setData] = useState<Bootstrap | null>(null);
@@ -37,6 +40,7 @@ export default function App() {
   const [listingItem, setListingItem] = useState("consumable-1");
   const [listingQty, setListingQty] = useState("1");
   const [listingPrice, setListingPrice] = useState("150");
+  const [clockMs, setClockMs] = useState(Date.now());
 
   const load = async () => {
     setError("");
@@ -67,6 +71,11 @@ export default function App() {
     }, 60_000);
     return () => window.clearInterval(timer);
   }, [handle]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const runAction = async (action: any) => {
     try {
@@ -186,21 +195,28 @@ export default function App() {
   const energyMeta = useMemo(() => {
     if (!data) return { nextTickText: "--", pct: 0 };
     const state = data.player.state;
-    const last = new Date(state.energyUpdatedAt || Date.now()).getTime();
-    const now = Date.now();
-    const remainingMs = state.energy >= 100 ? 0 : Math.max(0, 10 * 60 * 1000 - ((now - last) % (10 * 60 * 1000)));
+    const last = new Date(state.energyUpdatedAt || clockMs).getTime();
+    const remainingMs = state.energy >= 100 ? 0 : Math.max(0, ENERGY_TICK_MS - ((clockMs - last) % ENERGY_TICK_MS));
     const minutes = Math.floor(remainingMs / 60000);
     const seconds = Math.floor((remainingMs % 60000) / 1000);
     return {
       nextTickText: state.energy >= 100 ? "Full" : `+5 in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`,
       pct: state.energy,
     };
-  }, [data]);
+  }, [data, clockMs]);
 
-  const braveryPct = useMemo(() => {
-    if (!data) return 0;
-    return Math.max(0, Math.min(100, (Number(data.player.state.bravery || 0) / 20) * 100));
-  }, [data]);
+  const braveryMeta = useMemo(() => {
+    if (!data) return { nextTickText: "--", pct: 0 };
+    const state = data.player.state;
+    const last = new Date(state.braveryUpdatedAt || clockMs).getTime();
+    const remainingMs = state.bravery >= 20 ? 0 : Math.max(0, BRAVERY_TICK_MS - ((clockMs - last) % BRAVERY_TICK_MS));
+    const minutes = Math.floor(remainingMs / 60000);
+    const seconds = Math.floor((remainingMs % 60000) / 1000);
+    return {
+      nextTickText: state.bravery >= 20 ? "Full" : `+1 in ${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`,
+      pct: Math.max(0, Math.min(100, (Number(state.bravery || 0) / 20) * 100)),
+    };
+  }, [data, clockMs]);
 
   if (!data) {
     return <div style={{ minHeight: "100vh", background: "#05070b", color: "white", padding: 24, fontFamily: "Inter, system-ui, sans-serif" }}>Loading city grid…</div>;
@@ -284,7 +300,7 @@ export default function App() {
           {tab === "crimes" ? (
             <div style={contentGridStyle}>
               <Panel title="Street work">
-                <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 4 }}>Crimes now consume bravery instead of energy.</div>
+                <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 4 }}>Crimes consume bravery. Bravery regenerates at 1 every 5 minutes.</div>
                 <ActionButton onClick={() => runAction({ type: "crime", crimeId: "pick" })} label="Lift wallet • 4 bravery" />
                 <ActionButton onClick={() => runAction({ type: "crime", crimeId: "boost" })} label="Boost car • 8 bravery" ghost />
                 <ActionButton onClick={() => runAction({ type: "fightRival", rivalId: "dockhand" })} label="Fight dockhand" ghost />
@@ -305,7 +321,7 @@ export default function App() {
                 <ActionButton onClick={() => runAction({ type: "train", stat: "defense" })} label="Train defense" ghost />
               </Panel>
               <Panel title="Recovery">
-                <div style={{ color: "#94a3b8", marginBottom: 10 }}>Energy regenerates by 5 every 10 minutes. Recover resets health, energy, and bravery.</div>
+                <div style={{ color: "#94a3b8", marginBottom: 10 }}>Energy regenerates by 5 every 10 minutes. Bravery regenerates by 1 every 5 minutes. Recover resets health, energy, and bravery.</div>
                 <ActionButton onClick={() => runAction({ type: "recover" })} label="Manual recover" />
               </Panel>
             </div>
@@ -466,8 +482,8 @@ export default function App() {
             <div style={sectionLabelStyle}>Bravery</div>
             <div style={{ fontSize: 24, fontWeight: 800 }}>{state.bravery}/20</div>
             <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 10 }}>Crime resource</div>
-            <div style={meterTrackStyle}><div style={{ ...meterFillStyle, width: `${braveryPct}%` }} /></div>
-            <div style={{ marginTop: 8, color: "#7dd3fc", fontSize: 13 }}>Crimes deduct from bravery.</div>
+            <div style={meterTrackStyle}><div style={{ ...meterFillStyle, width: `${braveryMeta.pct}%` }} /></div>
+            <div style={{ marginTop: 8, color: "#7dd3fc", fontSize: 13 }}>{braveryMeta.nextTickText}</div>
           </div>
 
           <div style={rightCardStyle}>
