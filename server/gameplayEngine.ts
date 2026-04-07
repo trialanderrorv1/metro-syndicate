@@ -13,12 +13,20 @@ export type GameAction =
   | { type: "personalDeposit"; amount: number }
   | { type: "personalWithdraw"; amount: number };
 
+const MAX_ENERGY = 100;
+const MAX_BRAVERY = 20;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 export function applyGameAction(state: PlayerState, action: GameAction) {
-  let next: PlayerState = { ...state, inventory: { ...state.inventory }, equipped: { ...state.equipped }, log: [...state.log] };
+  let next: PlayerState = {
+    ...state,
+    inventory: { ...state.inventory },
+    equipped: { ...state.equipped },
+    log: [...state.log],
+  };
   const feed: string[] = [];
+  const nowIso = new Date().toISOString();
 
   const push = (entry: string) => {
     feed.unshift(entry);
@@ -27,7 +35,9 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
 
   switch (action.type) {
     case "recover": {
-      next.energy = 100;
+      next.energy = MAX_ENERGY;
+      next.energyUpdatedAt = nowIso;
+      next.bravery = MAX_BRAVERY;
       next.health = clamp(next.health + 20, 0, 100);
       next.day += 1;
       push("Recovered and reset your edge.");
@@ -57,6 +67,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       const job = JOBS.find((j) => j.id === next.job) || JOBS[0];
       if (next.energy < job.energy) throw new Error("Not enough energy");
       next.energy -= job.energy;
+      next.energyUpdatedAt = nowIso;
       next.cash += job.pay;
       next.respect += job.respect;
       next.day += 1;
@@ -66,6 +77,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
     case "train": {
       if (next.energy < 10) throw new Error("Not enough energy");
       next.energy -= 10;
+      next.energyUpdatedAt = nowIso;
       next[action.stat] += rand(1, 3);
       next.day += 1;
       push(`Trained ${action.stat}.`);
@@ -74,10 +86,10 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
     case "crime": {
       const crime = CRIMES.find((c) => c.id === action.crimeId);
       if (!crime) throw new Error("Crime not found");
-      if (next.energy < crime.energy) throw new Error("Not enough energy");
+      if (next.bravery < crime.bravery) throw new Error("Not enough bravery");
       const successChance = clamp(55 + next.speed + next.strength - crime.risk - next.heat / 2, 15, 92);
       const success = Math.random() * 100 <= successChance;
-      next.energy -= crime.energy;
+      next.bravery -= crime.bravery;
       next.day += 1;
       if (success) {
         next.cash += crime.cash;
@@ -99,6 +111,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       const power = next.strength + next.speed + next.defense + equippedBonus + rand(0, 16);
       const success = power >= rival.power + rand(0, 14);
       next.energy -= 12;
+      next.energyUpdatedAt = nowIso;
       next.day += 1;
       if (success) {
         next.cash += rival.reward;
@@ -130,7 +143,8 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       if (item.type === "utility") next.equipped.utility = item.id;
       if (item.type === "consumable") {
         next.inventory[item.id] -= 1;
-        next.energy = clamp(next.energy + (item.effect?.energy || 0), 0, 100);
+        next.energy = clamp(next.energy + (item.effect?.energy || 0), 0, MAX_ENERGY);
+        next.energyUpdatedAt = nowIso;
       }
       push(`${item.type === "consumable" ? "Used" : "Equipped"} ${item.name}.`);
       break;
