@@ -1,0 +1,68 @@
+# dependencies
+node_modules/
+
+# env files
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+build/
+.next/
+out/
+coverage/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# local databases / temp data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+redis-data/
+
+# caches
+.cache/
+.parcel-cache/
+.vite/
+.turbo/
+.eslintcache
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# test artifacts
+playwright-report/
+test-results/
+
+# misc
+*.local
+
+# local patch / recovery folders
+metro_patch_v*/
+metro_style_patch/
+live_readiness_patch/
+auth_wiring_patch/
+
+# local schema backups / snippets
+prisma/*.bak
+prisma/*.before_*
+prisma/*.snippet
+
+# local sql dumps / one-off backups
+*_before_reset.sql
+*_backup.sql
+*.dump
+
+# local helper scratch files
+check-client-models.cjs
+check-persistence-models.ts
