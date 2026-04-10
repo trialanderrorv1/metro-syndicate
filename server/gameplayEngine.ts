@@ -1,4 +1,5 @@
-import { CITIES, CRIMES, ITEMS, JOBS, RIVALS, getLevelFromRespect, type PlayerState } from "../shared/gameData";
+
+import { CITIES, CRIMES, ITEMS, JOBS, RIVALS, getLevelFromRespect, getMaxBravery, getMaxEnergy, type PlayerState } from "../shared/gameData";
 
 export type GameAction =
   | { type: "hospital" }
@@ -10,11 +11,16 @@ export type GameAction =
   | { type: "buyItem"; itemId: string }
   | { type: "useItem"; itemId: string }
   | { type: "personalDeposit"; amount: number }
-  | { type: "personalWithdraw"; amount: number };
+  | { type: "personalWithdraw"; amount: number }
+  | { type: "activatePremium"; plan: "monthly" | "continuous" }
+  | { type: "cancelPremiumAutoRenew" };
 
-const MAX_ENERGY = 100;
-const MAX_BRAVERY = 20;
 const MAX_HEALTH = 100;
+const MIN_CRIME_HOSPITAL_MINUTES = 5;
+const MAX_CRIME_HOSPITAL_MINUTES = 10;
+const FIGHT_ENERGY_COST = 20;
+const TRAVEL_COOLDOWN_MS = 60 * 60 * 1000;
+const PREMIUM_CYCLE_MS = 30 * 24 * 60 * 60 * 1000;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
@@ -45,6 +51,30 @@ function getEquippedBonus(state: PlayerState, key: string) {
     .map((id) => ITEMS.find((item) => item.id === id)?.effect?.[key as keyof (typeof ITEMS)[number]["effect"]] || 0)
     .reduce((sum, value) => sum + Number(value || 0), 0);
 }
+function getEnergyCap(state: PlayerState) {
+  return Number(getMaxEnergy(state as any) || 100);
+}
+
+function getBraveryCap(state: PlayerState) {
+  const level = getLevelFromRespect(Number(state.respect || 0));
+  return Number(getMaxBravery(level) || 20);
+}
+
+function isPremiumActive(state: PlayerState) {
+  const premiumUntilMs = new Date((state as any).premiumUntil || 0).getTime();
+  return Number.isFinite(premiumUntilMs) && premiumUntilMs > Date.now();
+}
+
+function getTravelCooldownMs(state: PlayerState) {
+  const availableAtMs = new Date((state as any).travelAvailableAt || 0).getTime();
+  if (!Number.isFinite(availableAtMs)) return 0;
+  return Math.max(0, availableAtMs - Date.now());
+}
+
+function getPremiumBaseMs(state: PlayerState) {
+  const premiumUntilMs = new Date((state as any).premiumUntil || 0).getTime();
+  return Number.isFinite(premiumUntilMs) && premiumUntilMs > Date.now() ? premiumUntilMs : Date.now();
+}
 
 function assertFree(state: PlayerState) {
   if (!state.jailUntil) return;
@@ -52,6 +82,35 @@ function assertFree(state: PlayerState) {
   if (Number.isFinite(jailMs) && jailMs > Date.now()) {
     throw new Error("You are in jail.");
   }
+}
+
+function getCrimeHospitalMinutes(crimeId: string) {
+  const crimeIndex = CRIMES.findIndex((entry) => entry.id === crimeId);
+  if (crimeIndex <= 0) return MIN_CRIME_HOSPITAL_MINUTES;
+  const maxIndex = Math.max(1, CRIMES.length - 1);
+  const ratio = crimeIndex / maxIndex;
+  return Math.round(
+    MIN_CRIME_HOSPITAL_MINUTES + ratio * (MAX_CRIME_HOSPITAL_MINUTES - MIN_CRIME_HOSPITAL_MINUTES),
+  );
+}
+
+function getCrimeCategoryId(crime: any) {
+  return String(crime?.categoryId || "").trim();
+}
+
+function getCrimeSkillValue(state: PlayerState, categoryId: string) {
+  if (!categoryId) return 0;
+  const skills = ((state as any).crimeSkills || {}) as Record<string, number>;
+  return Number(skills[categoryId] || 0);
+}
+
+function setCrimeSkillValue(state: PlayerState, categoryId: string, value: number) {
+  if (!categoryId) return;
+  const currentSkills = (((state as any).crimeSkills || {}) as Record<string, number>);
+  (state as any).crimeSkills = {
+    ...currentSkills,
+    [categoryId]: clamp(Number(value || 0), 0, 100),
+  };
 }
 
 export function applyGameAction(state: PlayerState, action: GameAction) {
@@ -90,13 +149,16 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       const city = CITIES.find((entry) => entry.id === action.cityId);
       if (!city) throw new Error("City not found");
       if (next.city === city.id) throw new Error("Already there");
+      const travelCooldownMs = getTravelCooldownMs(next);
+      if (travelCooldownMs > 0) throw new Error(`Travel available in ${Math.ceil(travelCooldownMs / 60000)} minutes`);
       const travelDiscount = Number(getJobBonus(next).travelDiscount || 0);
       const cost = Math.max(50, 250 - travelDiscount);
       if (next.cash < cost) throw new Error("Not enough cash to travel");
       next.cash -= cost;
       next.city = city.id;
+      (next as any).travelAvailableAt = new Date(Date.now() + TRAVEL_COOLDOWN_MS).toISOString();
       next.day += 1;
-      push(`Travelled to ${city.name} for ${cost}.`);
+      push(`Travelled to ${city.name} for ${cost}. Next travel available in 60 minutes.`);
       break;
     }
     case "takeJob": {
@@ -114,7 +176,6 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       const pay = job.pay;
       next.cash += pay;
       next.jobLastPaidOn = today;
-      next.respect += 1;
       next.day += 1;
       push(`Collected daily pay from ${job.name} for ${pay}.`);
       break;
@@ -131,14 +192,16 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       const effectiveStrength = next.strength + Number(getJobBonus(next).strength || 0);
       const effectiveDefense = next.defense + Number(getJobBonus(next).defense || 0);
       const utilityCrimeBonus = getEquippedBonus(next, "crime");
+      const crimeCategoryId = getCrimeCategoryId(crime);
+      const currentCrimeSkill = getCrimeSkillValue(next, crimeCategoryId);
       const successChance = clamp(
-        52 + level * 1.6 + effectiveSpeed * 1.2 + effectiveStrength * 0.7 + effectiveDefense * 0.35 + crimeJobBonus + utilityCrimeBonus - crime.difficulty,
+        52 + level * 1.6 + effectiveSpeed * 1.2 + effectiveStrength * 0.7 + effectiveDefense * 0.35 + crimeJobBonus + utilityCrimeBonus + currentCrimeSkill * 0.28 - crime.difficulty,
         8,
         96,
       );
       const success = Math.random() * 100 <= successChance;
 
-      next.bravery = clamp(next.bravery - crime.bravery, 0, MAX_BRAVERY);
+      next.bravery = clamp(next.bravery - crime.bravery, 0, getBraveryCap(next));
       next.braveryUpdatedAt = nowIso;
       next.day += 1;
 
@@ -148,18 +211,32 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
         next.crimesSucceeded += 1;
         next.speed += rand(0, 1);
         next.strength += rand(0, 1);
+        if (crimeCategoryId) {
+          setCrimeSkillValue(next, crimeCategoryId, currentCrimeSkill + Number((crime as any).xpGain || 0));
+        }
         push(`Crime succeeded: ${crime.name}. You pulled ${crime.cash}.`);
       } else {
         next.crimesFailed += 1;
         const jailed = Math.random() * 100 <= crime.jailChance;
         if (jailed) {
           next.jailUntil = new Date(Date.now() + crime.jailMinutes * 60 * 1000).toISOString();
+          if (crimeCategoryId) {
+            setCrimeSkillValue(next, crimeCategoryId, currentCrimeSkill - Number((crime as any).xpLoss || 0));
+          }
           push(`Crime failed: ${crime.name}. You got jailed for ${crime.jailMinutes} minutes.`);
         } else {
           const damage = rand(10, 22);
-          next.health = clamp(next.health - damage, 0, MAX_HEALTH);
+          const nextHealth = clamp(next.health - damage, 0, MAX_HEALTH);
+          next.health = nextHealth;
           next.healthUpdatedAt = nowIso;
-          push(`Crime failed: ${crime.name}. You escaped but took ${damage} damage.`);
+
+          if (nextHealth <= 0) {
+            const hospitalMinutes = getCrimeHospitalMinutes(crime.id);
+            next.hospitalUntil = new Date(Date.now() + hospitalMinutes * 60 * 1000).toISOString();
+            push(`Crime failed: ${crime.name}. You were put in hospital for ${hospitalMinutes} minutes.`);
+          } else {
+            push(`Crime failed: ${crime.name}. You escaped but took ${damage} damage.`);
+          }
         }
       }
       break;
@@ -168,7 +245,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       assertFree(next);
       const rival = RIVALS.find((entry) => entry.id === action.rivalId);
       if (!rival) throw new Error("Rival not found");
-      if (next.energy < 14) throw new Error("Not enough energy");
+      if (next.energy < FIGHT_ENERGY_COST) throw new Error("Not enough energy");
 
       const fightJobBonus = Number(getJobBonus(next).fight || 0);
       const effectiveStrength = next.strength + Number(getJobBonus(next).strength || 0);
@@ -178,7 +255,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       const playerPower = effectiveStrength + effectiveSpeed + effectiveDefense + fightJobBonus + combatBonus + rand(0, 14);
       const success = playerPower >= rival.power + rand(0, 12);
 
-      next.energy = clamp(next.energy - 14, 0, MAX_ENERGY);
+      next.energy = clamp(next.energy - FIGHT_ENERGY_COST, 0, getEnergyCap(next));
       next.energyUpdatedAt = nowIso;
       next.day += 1;
 
@@ -221,13 +298,32 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       if (item.type === "recovery") {
         next.inventory[item.id] -= 1;
         next.health = clamp(next.health + Number(item.effect?.health || 0), 0, MAX_HEALTH);
-        next.energy = clamp(next.energy + Number(item.effect?.energy || 0), 0, MAX_ENERGY);
-        next.bravery = clamp(next.bravery + Number(item.effect?.bravery || 0), 0, MAX_BRAVERY);
+        next.energy = clamp(next.energy + Number(item.effect?.energy || 0), 0, getEnergyCap(next));
+        next.bravery = clamp(next.bravery + Number(item.effect?.bravery || 0), 0, getBraveryCap(next));
         next.healthUpdatedAt = nowIso;
         next.energyUpdatedAt = nowIso;
         next.braveryUpdatedAt = nowIso;
       }
       push(`${item.type === "recovery" ? "Used" : "Equipped"} ${item.name}.`);
+      break;
+    }
+
+    case "activatePremium": {
+      const baseMs = getPremiumBaseMs(next);
+      (next as any).premiumUntil = new Date(baseMs + PREMIUM_CYCLE_MS).toISOString();
+      (next as any).premiumCoins = Number((next as any).premiumCoins || 0) + 100;
+      (next as any).premiumAutoRenew = action.plan === "continuous";
+      push(
+        action.plan === "continuous"
+          ? "Continuous premium activated. Premium extended by 30 days and 100 premium coins added."
+          : "Monthly premium activated. Premium extended by 30 days and 100 premium coins added."
+      );
+      break;
+    }
+    case "cancelPremiumAutoRenew": {
+      if (!(next as any).premiumAutoRenew) throw new Error("Continuous premium is not active");
+      (next as any).premiumAutoRenew = false;
+      push("Continuous premium auto-renew cancelled.");
       break;
     }
     case "personalDeposit": {

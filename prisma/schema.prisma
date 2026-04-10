@@ -30,13 +30,13 @@ enum NotificationKind {
 }
 
 model Player {
-  id            String          @id @default(cuid())
-  handle        String          @unique
+  id            String         @id @default(cuid())
+  handle        String         @unique
   passwordHash  String
   crewId        String?
   stateJson     Json
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   notifications Notification[]
 }
 
@@ -126,4 +126,51 @@ model Notification {
   player     Player           @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
   @@index([playerId, createdAt])
+}
+
+model UserAccount {
+  id            String         @id @default(cuid())
+  handle        String         @unique
+  email         String         @unique
+  passwordHash  String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  sessions      UserSession[]
+  premiumGrants PremiumGrant[]
+  auditEvents   AuditEvent[]
+}
+
+model UserSession {
+  id           String      @id @default(cuid())
+  userId       String
+  sessionToken String      @unique
+  expiresAt    DateTime
+  createdAt    DateTime    @default(now())
+  user         UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PremiumGrant {
+  id           String      @id @default(cuid())
+  userId       String
+  provider     String
+  providerRef  String?
+  planCode     String
+  status       String
+  grantedCoins Int         @default(0)
+  premiumUntil DateTime
+  autoRenew    Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  user         UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditEvent {
+  id            String       @id @default(cuid())
+  actorId       String?
+  action        String
+  targetId      String?
+  ipAddress     String?
+  metadata      Json?
+  createdAt     DateTime     @default(now())
+  userAccount   UserAccount? @relation(fields: [userAccountId], references: [id])
+  userAccountId String?
 }
