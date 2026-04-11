@@ -331,7 +331,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       if (amount <= 0 || next.cash < amount) throw new Error("Cannot deposit");
       next.cash -= amount;
       next.bank += amount;
-      push(`Deposited ${amount} into the bank.`);
+      push(`Deposited $${amount} into the bank.`);
       break;
     }
     case "personalWithdraw": {
@@ -339,7 +339,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       if (amount <= 0 || next.bank < amount) throw new Error("Cannot withdraw");
       next.bank -= amount;
       next.cash += amount;
-      push(`Withdrew ${amount} from the bank.`);
+      push(`Withdrew $${amount} from the bank.`);
       break;
     }
   }
