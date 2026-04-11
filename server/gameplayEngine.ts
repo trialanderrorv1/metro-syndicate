@@ -1,4 +1,3 @@
-
 import { CITIES, CRIMES, ITEMS, JOBS, RIVALS, getLevelFromRespect, getMaxBravery, getMaxEnergy, type PlayerState } from "../shared/gameData";
 
 export type GameAction =
@@ -47,7 +46,7 @@ function getJobBonus(state: PlayerState) {
 }
 
 function getEquippedBonus(state: PlayerState, key: string) {
-  return [state.equipped.weapon, state.equipped.armor, state.equipped.utility]
+  return Object.values(state.equipped || {})
     .map((id) => ITEMS.find((item) => item.id === id)?.effect?.[key as keyof (typeof ITEMS)[number]["effect"]] || 0)
     .reduce((sum, value) => sum + Number(value || 0), 0);
 }
@@ -292,20 +291,35 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       if (!item) throw new Error("Item not found");
       if ((next.inventory[item.id] || 0) <= 0) throw new Error("Item not owned");
 
-      if (item.type === "weapon") next.equipped.weapon = item.id;
-      if (item.type === "armor") next.equipped.armor = item.id;
-      if (item.type === "utility") next.equipped.utility = item.id;
-      if (item.type === "recovery") {
+      const equipmentSlots = ["primary", "secondary", "melee", "head", "chest", "legs", "feet", "utility"];
+
+      if (equipmentSlots.includes(item.type)) {
+        (next.equipped as Record<string, string | null>)[item.type] = item.id;
+        push(`Equipped ${item.name}.`);
+        break;
+      }
+
+      if (item.type === "medical" || item.type === "utility_use") {
         next.inventory[item.id] -= 1;
         next.health = clamp(next.health + Number(item.effect?.health || 0), 0, MAX_HEALTH);
         next.energy = clamp(next.energy + Number(item.effect?.energy || 0), 0, getEnergyCap(next));
         next.bravery = clamp(next.bravery + Number(item.effect?.bravery || 0), 0, getBraveryCap(next));
+
+        const reduceMinutes = Number(item.effect?.hospitalReduceMinutes || 0);
+        if (reduceMinutes > 0 && next.hospitalUntil) {
+          const reducedUntilMs = new Date(next.hospitalUntil).getTime() - reduceMinutes * 60 * 1000;
+          next.hospitalUntil = reducedUntilMs > Date.now() ? new Date(reducedUntilMs).toISOString() : null;
+        }
+
         next.healthUpdatedAt = nowIso;
         next.energyUpdatedAt = nowIso;
         next.braveryUpdatedAt = nowIso;
+
+        push(`Used ${item.name}.`);
+        break;
       }
-      push(`${item.type === "recovery" ? "Used" : "Equipped"} ${item.name}.`);
-      break;
+
+      throw new Error("Item cannot be used");
     }
 
     case "activatePremium": {
