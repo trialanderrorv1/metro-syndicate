@@ -158,7 +158,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       next.city = city.id;
       (next as any).travelAvailableAt = new Date(Date.now() + TRAVEL_COOLDOWN_MS).toISOString();
       next.day += 1;
-      push(`Travelled to ${city.name} for ${cost}. Next travel available in 60 minutes.`);
+      push(`Travelled to ${city.name} for $${cost}. Next travel available in 60 minutes.`);
       break;
     }
     case "takeJob": {
@@ -177,7 +177,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       next.cash += pay;
       next.jobLastPaidOn = today;
       next.day += 1;
-      push(`Collected daily pay from ${job.name} for ${pay}.`);
+      push(`Collected daily pay from ${job.name} for $${pay}.`);
       break;
     }
     case "crime": {
@@ -214,7 +214,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
         if (crimeCategoryId) {
           setCrimeSkillValue(next, crimeCategoryId, currentCrimeSkill + Number((crime as any).xpGain || 0));
         }
-        push(`Crime succeeded: ${crime.name}. You pulled ${crime.cash}.`);
+        push(`Crime succeeded: ${crime.name}. You pulled $${crime.cash}.`);
       } else {
         next.crimesFailed += 1;
         const jailed = Math.random() * 100 <= crime.jailChance;
@@ -266,7 +266,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
         next.strength += rand(0, 1);
         next.speed += rand(0, 1);
         next.defense += rand(0, 1);
-        push(`Beat ${rival.name} and took ${rival.reward}.`);
+        push(`Beat ${rival.name} and took $${rival.reward}.`);
       } else {
         const damage = rand(12, 24);
         next.losses += 1;
@@ -284,7 +284,7 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       if (next.cash < price) throw new Error("Not enough cash");
       next.cash -= price;
       next.inventory[item.id] = (next.inventory[item.id] || 0) + 1;
-      push(`Bought ${item.name} for ${price}.`);
+      push(`Bought ${item.name} for $${price}.`);
       break;
     }
     case "useItem": {
