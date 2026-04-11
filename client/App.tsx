@@ -38,9 +38,9 @@ type ForumThread = {
   author: string;
   createdAt: string;
 };
-type Tab = "home" | "jobs" | "crimes" | "fight" | "hospital" | "travel" | "inventory" | "shops" | "train" | "forums" | "market" | "jail" | "log" | "premium";
+type Tab = "home" | "jobs" | "crimes" | "fight" | "hospital" | "travel" | "bank" | "inventory" | "shops" | "train" | "forums" | "market" | "jail" | "log" | "premium";
 
-const TABS: Tab[] = ["home", "jobs", "crimes", "fight", "hospital", "travel", "inventory", "shops", "train", "forums", "market", "jail", "log"];
+const TABS: Tab[] = ["home", "jobs", "crimes", "fight", "hospital", "travel", "bank", "inventory", "shops", "train", "forums", "market", "jail", "log"];
 const NAV_META: Record<Tab, { label: string; icon: string }> = {
   home: { label: "Home", icon: "⌂" },
   jobs: { label: "Jobs", icon: "▣" },
@@ -48,6 +48,7 @@ const NAV_META: Record<Tab, { label: string; icon: string }> = {
   fight: { label: "Fight", icon: "⚡" },
   hospital: { label: "Hospital", icon: "+" },
   travel: { label: "Travel", icon: "➤" },
+  bank: { label: "Bank", icon: "$" },
   inventory: { label: "Inventory", icon: "◍" },
   shops: { label: "Shops", icon: "⚒" },
   train: { label: "Train", icon: "▲" },
@@ -166,7 +167,6 @@ function EquipmentCard({
   );
 }
 const FORUM_STORAGE_KEY = "metro_syndicate_forums_v9";
-const TAB_STORAGE_KEY = "metro_syndicate_active_tab_v1";
 
 function loadForumThreads(storageKey: string): ForumThread[] {
   const seed: ForumThread[] = [
@@ -211,24 +211,6 @@ function saveForumThreads(threads: ForumThread[], storageKey: string) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(storageKey, JSON.stringify(threads));
-  } catch {}
-}
-
-function loadSavedTab(handle: string): Tab {
-  if (typeof window === "undefined") return "home";
-  try {
-    const raw = window.localStorage.getItem(`${TAB_STORAGE_KEY}_${handle}`);
-    const validTabs: Tab[] = [...TABS, "premium"];
-    return raw && validTabs.includes(raw as Tab) ? (raw as Tab) : "home";
-  } catch {
-    return "home";
-  }
-}
-
-function saveSavedTab(handle: string, tab: Tab) {
-  if (typeof window === "undefined" || !handle) return;
-  try {
-    window.localStorage.setItem(`${TAB_STORAGE_KEY}_${handle}`, tab);
   } catch {}
 }
 
@@ -304,6 +286,8 @@ export default function App() {
   const [openCrimeCategory, setOpenCrimeCategory] = useState<string | null>(CRIME_CATEGORIES[0]?.id || null);
   const [openShop, setOpenShop] = useState<string | null>("weapons");
   const [showAffordableOnly, setShowAffordableOnly] = useState(false);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [forumCategory, setForumCategory] = useState<ForumCategory>("updates");
   const [forumThreads, setForumThreads] = useState<ForumThread[]>([]);
   const [forumTitle, setForumTitle] = useState("");
@@ -362,28 +346,20 @@ export default function App() {
     setNotice({ kind: "fail", title: "Action failed", message });
   };
 
-  const apply = (payload: any, options?: { deriveNotice?: boolean; clearNotice?: boolean }) => {
+  const apply = (payload: any) => {
     if (!payload) return;
-    const deriveNotice = options?.deriveNotice ?? true;
-
-    if (options?.clearNotice) {
-      setNotice(null);
-    }
-
     if (payload.bootstrap) {
       setData(payload.bootstrap as Bootstrap);
       if (payload.actionResult) {
         setNotice(payload.actionResult as ActionResult);
-      } else if (deriveNotice) {
+      } else {
         const derived = deriveNoticeFromPayload(payload);
         if (derived) setNotice(derived);
       }
     } else {
       setData(payload as Bootstrap);
-      if (deriveNotice) {
-        const derived = deriveNoticeFromPayload(payload);
-        if (derived) setNotice(derived);
-      }
+      const derived = deriveNoticeFromPayload(payload);
+      if (derived) setNotice(derived);
     }
   };
 
@@ -392,22 +368,19 @@ export default function App() {
     if (!targetHandle) return;
     setErr("");
     try {
-      apply(
-        await apiCall("/api/demo/register", { method: "POST", body: JSON.stringify({ handle: targetHandle }) }),
-        { deriveNotice: false, clearNotice: true }
-      );
+      apply(await apiCall("/api/demo/register", { method: "POST", body: JSON.stringify({ handle: targetHandle }) }));
     } catch (e: any) {
       showErrorNotice(e.message);
     }
   };
 
-  const bootstrapAuthenticatedUser = async (userHandle: string, resetToHome = false) => {
+  const bootstrapAuthenticatedUser = async (userHandle: string) => {
     setHandle(userHandle);
-    setTab(resetToHome ? "home" : loadSavedTab(userHandle));
+    setTab("home");
     apply(await apiCall("/api/demo/register", {
       method: "POST",
       body: JSON.stringify({ handle: userHandle }),
-    }), { deriveNotice: false, clearNotice: true });
+    }));
   };
 
   const login = async () => {
@@ -417,7 +390,7 @@ export default function App() {
       body: JSON.stringify({ identifier, password }),
     });
     setAuthUser(result.user);
-    await bootstrapAuthenticatedUser(result.user.handle, true);
+    await bootstrapAuthenticatedUser(result.user.handle);
   };
 
   const register = async () => {
@@ -431,7 +404,7 @@ export default function App() {
       }),
     });
     setAuthUser(result.user);
-    await bootstrapAuthenticatedUser(result.user.handle, true);
+    await bootstrapAuthenticatedUser(result.user.handle);
   };
 
   const logout = async () => {
@@ -447,6 +420,8 @@ export default function App() {
     setPassword("");
     setTab("home");
     setNotice(null);
+    setDepositAmount("");
+    setWithdrawAmount("");
     setForumTitle("");
     setForumBody("");
   };
@@ -454,10 +429,7 @@ export default function App() {
   const refresh = async () => {
     if (!activeHandle) return;
     try {
-      apply(await apiCall(`/api/demo/${activeHandle}/bootstrap`), {
-        deriveNotice: false,
-        clearNotice: true,
-      });
+      apply(await apiCall(`/api/demo/${activeHandle}/bootstrap`));
     } catch {}
   };
 
@@ -483,6 +455,29 @@ export default function App() {
     setErr("");
     try {
       apply(await apiCall(`/api/demo/${activeHandle}/hospital/${id}/revive`, { method: "POST" }));
+    } catch (e: any) {
+      showErrorNotice(e.message);
+    }
+  };
+
+  const runBankAction = async (
+    type: "personalDeposit" | "personalWithdraw",
+    rawAmount: string,
+    onSuccess?: () => void,
+  ) => {
+    const amount = Math.floor(Number(rawAmount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showErrorNotice(type === "personalDeposit" ? "Enter a valid deposit amount" : "Enter a valid withdrawal amount");
+      return;
+    }
+
+    setErr("");
+    try {
+      apply(await apiCall(`/api/demo/${activeHandle}/actions`, {
+        method: "POST",
+        body: JSON.stringify({ action: { type, amount } }),
+      }));
+      onSuccess?.();
     } catch (e: any) {
       showErrorNotice(e.message);
     }
@@ -534,11 +529,6 @@ export default function App() {
     setForumThreads(loadForumThreads(forumStorageKey));
     setForumReady(true);
   }, [forumStorageKey]);
-
-  useEffect(() => {
-    if (!activeHandle) return;
-    saveSavedTab(activeHandle, tab);
-  }, [activeHandle, tab]);
 
 
   useEffect(() => {
@@ -1359,6 +1349,78 @@ const shopGroups = [
               {state.premiumAutoRenew ? (
                 <button style={subBtn} onClick={() => runAction({ type: "cancelPremiumAutoRenew" })}>Cancel Continuous Renewal</button>
               ) : null}
+            </div>
+          )}
+
+
+          {currentTab === "bank" && (
+            <div style={section}>
+              <div style={grid4}>
+                <Mini label="Cash On Hand" value={`$${state.cash}`} />
+                <Mini label="Bank Balance" value={`$${state.bank}`} />
+                <Mini label="Total Funds" value={`$${Number(state.cash || 0) + Number(state.bank || 0)}`} />
+                <Mini label="Status" value={jailMs > 0 ? "Jailed" : hospitalMs > 0 ? "Hospital" : "Available"} />
+              </div>
+
+              <div style={crimeBox}>
+                <div style={groupHeader}>Deposit Money</div>
+                <div style={muted}>Move money from cash into your bank account.</div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    style={{ ...input, width: 220 }}
+                    placeholder="Deposit amount"
+                  />
+                  <button
+                    style={btn}
+                    disabled={Number(state.cash || 0) <= 0}
+                    onClick={() => runBankAction("personalDeposit", depositAmount, () => setDepositAmount(""))}
+                  >
+                    Deposit
+                  </button>
+                  <button
+                    style={subBtn}
+                    disabled={Number(state.cash || 0) <= 0}
+                    onClick={() => runBankAction("personalDeposit", String(Math.floor(Number(state.cash || 0))), () => setDepositAmount(""))}
+                  >
+                    Deposit All
+                  </button>
+                </div>
+              </div>
+
+              <div style={crimeBox}>
+                <div style={groupHeader}>Withdraw Money</div>
+                <div style={muted}>Move money from your bank back into cash on hand.</div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    style={{ ...input, width: 220 }}
+                    placeholder="Withdraw amount"
+                  />
+                  <button
+                    style={btn}
+                    disabled={Number(state.bank || 0) <= 0}
+                    onClick={() => runBankAction("personalWithdraw", withdrawAmount, () => setWithdrawAmount(""))}
+                  >
+                    Withdraw
+                  </button>
+                  <button
+                    style={subBtn}
+                    disabled={Number(state.bank || 0) <= 0}
+                    onClick={() => runBankAction("personalWithdraw", String(Math.floor(Number(state.bank || 0))), () => setWithdrawAmount(""))}
+                  >
+                    Withdraw All
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
