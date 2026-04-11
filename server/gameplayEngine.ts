@@ -9,6 +9,7 @@ export type GameAction =
   | { type: "fightRival"; rivalId: string }
   | { type: "buyItem"; itemId: string }
   | { type: "useItem"; itemId: string }
+  | { type: "sellItem"; itemId: string }
   | { type: "personalDeposit"; amount: number }
   | { type: "personalWithdraw"; amount: number }
   | { type: "activatePremium"; plan: "monthly" | "continuous" }
@@ -320,6 +321,27 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       }
 
       throw new Error("Item cannot be used");
+    }
+
+    case "sellItem": {
+      const item = ITEMS.find((entry) => entry.id === action.itemId);
+      if (!item) throw new Error("Item not found");
+      if ((next.inventory[item.id] || 0) <= 0) throw new Error("Item not owned");
+
+      const salePrice = Math.max(1, Math.floor(Number(item.price || 0) / 3));
+      next.inventory[item.id] = Math.max(0, Number(next.inventory[item.id] || 0) - 1);
+      if (next.inventory[item.id] <= 0) {
+        delete next.inventory[item.id];
+        for (const [slot, equippedId] of Object.entries(next.equipped || {})) {
+          if (equippedId === item.id) {
+            (next.equipped as Record<string, string | null>)[slot] = null;
+          }
+        }
+      }
+
+      next.cash += salePrice;
+      push(`Sold ${item.name} for $${salePrice}.`);
+      break;
     }
 
     case "activatePremium": {

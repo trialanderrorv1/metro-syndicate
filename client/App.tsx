@@ -38,9 +38,9 @@ type ForumThread = {
   author: string;
   createdAt: string;
 };
-type Tab = "home" | "jobs" | "crimes" | "fight" | "hospital" | "travel" | "bank" | "inventory" | "shops" | "train" | "forums" | "market" | "jail" | "log" | "premium";
+type Tab = "home" | "jobs" | "crimes" | "fight" | "hospital" | "travel" | "bank" | "inventory" | "shops" | "train" | "forums" | "jail" | "log" | "premium";
 
-const TABS: Tab[] = ["home", "jobs", "crimes", "fight", "hospital", "travel", "bank", "inventory", "shops", "train", "forums", "market", "jail", "log"];
+const TABS: Tab[] = ["home", "jobs", "crimes", "fight", "hospital", "travel", "bank", "inventory", "shops", "train", "forums", "jail", "log"];
 const NAV_META: Record<Tab, { label: string; icon: string }> = {
   home: { label: "Home", icon: "⌂" },
   jobs: { label: "Jobs", icon: "▣" },
@@ -53,7 +53,6 @@ const NAV_META: Record<Tab, { label: string; icon: string }> = {
   shops: { label: "Shops", icon: "⚒" },
   train: { label: "Train", icon: "▲" },
   forums: { label: "Forums", icon: "☰" },
-  market: { label: "Market", icon: "¤" },
   jail: { label: "Jail", icon: "⛓" },
   log: { label: "Log", icon: "✦" },
   premium: { label: "Premium", icon: "★" },
@@ -167,6 +166,7 @@ function EquipmentCard({
   );
 }
 const FORUM_STORAGE_KEY = "metro_syndicate_forums_v9";
+const TAB_STORAGE_KEY = "metro_syndicate_active_tab_v1";
 
 function loadForumThreads(storageKey: string): ForumThread[] {
   const seed: ForumThread[] = [
@@ -211,6 +211,24 @@ function saveForumThreads(threads: ForumThread[], storageKey: string) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(storageKey, JSON.stringify(threads));
+  } catch {}
+}
+
+function loadSavedTab(handle: string): Tab {
+  if (typeof window === "undefined" || !handle) return "home";
+  try {
+    const raw = window.localStorage.getItem(`${TAB_STORAGE_KEY}_${handle}`);
+    const validTabs: Tab[] = [...TABS, "premium"];
+    return raw && validTabs.includes(raw as Tab) ? (raw as Tab) : "home";
+  } catch {
+    return "home";
+  }
+}
+
+function saveSavedTab(handle: string, tab: Tab) {
+  if (typeof window === "undefined" || !handle) return;
+  try {
+    window.localStorage.setItem(`${TAB_STORAGE_KEY}_${handle}`, tab);
   } catch {}
 }
 
@@ -346,20 +364,28 @@ export default function App() {
     setNotice({ kind: "fail", title: "Action failed", message });
   };
 
-  const apply = (payload: any) => {
+  const apply = (payload: any, options?: { deriveNotice?: boolean; clearNotice?: boolean }) => {
     if (!payload) return;
+    const deriveNotice = options?.deriveNotice ?? true;
+
+    if (options?.clearNotice) {
+      setNotice(null);
+    }
+
     if (payload.bootstrap) {
       setData(payload.bootstrap as Bootstrap);
       if (payload.actionResult) {
         setNotice(payload.actionResult as ActionResult);
-      } else {
+      } else if (deriveNotice) {
         const derived = deriveNoticeFromPayload(payload);
         if (derived) setNotice(derived);
       }
     } else {
       setData(payload as Bootstrap);
-      const derived = deriveNoticeFromPayload(payload);
-      if (derived) setNotice(derived);
+      if (deriveNotice) {
+        const derived = deriveNoticeFromPayload(payload);
+        if (derived) setNotice(derived);
+      }
     }
   };
 
@@ -368,19 +394,22 @@ export default function App() {
     if (!targetHandle) return;
     setErr("");
     try {
-      apply(await apiCall("/api/demo/register", { method: "POST", body: JSON.stringify({ handle: targetHandle }) }));
+      apply(
+        await apiCall("/api/demo/register", { method: "POST", body: JSON.stringify({ handle: targetHandle }) }),
+        { deriveNotice: false, clearNotice: true }
+      );
     } catch (e: any) {
       showErrorNotice(e.message);
     }
   };
 
-  const bootstrapAuthenticatedUser = async (userHandle: string) => {
+  const bootstrapAuthenticatedUser = async (userHandle: string, resetToHome = false) => {
     setHandle(userHandle);
-    setTab("home");
+    setTab(resetToHome ? "home" : loadSavedTab(userHandle));
     apply(await apiCall("/api/demo/register", {
       method: "POST",
       body: JSON.stringify({ handle: userHandle }),
-    }));
+    }), { deriveNotice: false, clearNotice: true });
   };
 
   const login = async () => {
@@ -390,7 +419,7 @@ export default function App() {
       body: JSON.stringify({ identifier, password }),
     });
     setAuthUser(result.user);
-    await bootstrapAuthenticatedUser(result.user.handle);
+    await bootstrapAuthenticatedUser(result.user.handle, true);
   };
 
   const register = async () => {
@@ -404,7 +433,7 @@ export default function App() {
       }),
     });
     setAuthUser(result.user);
-    await bootstrapAuthenticatedUser(result.user.handle);
+    await bootstrapAuthenticatedUser(result.user.handle, true);
   };
 
   const logout = async () => {
@@ -429,7 +458,10 @@ export default function App() {
   const refresh = async () => {
     if (!activeHandle) return;
     try {
-      apply(await apiCall(`/api/demo/${activeHandle}/bootstrap`));
+      apply(await apiCall(`/api/demo/${activeHandle}/bootstrap`), {
+        deriveNotice: false,
+        clearNotice: true,
+      });
     } catch {}
   };
 
@@ -529,6 +561,11 @@ export default function App() {
     setForumThreads(loadForumThreads(forumStorageKey));
     setForumReady(true);
   }, [forumStorageKey]);
+
+  useEffect(() => {
+    if (!activeHandle) return;
+    saveSavedTab(activeHandle, tab);
+  }, [activeHandle, tab]);
 
 
   useEffect(() => {
@@ -720,6 +757,7 @@ export default function App() {
   };
 
   const canAffordItem = (item: any) => Number(state.cash || 0) >= getShopItemPrice(item);
+  const getSellItemPrice = (item: any) => Math.max(1, Math.floor(Number(item.price || 0) / 3));
 
   const fightEnergyCost = 20;
   const fixedActionButtonStyle = (tone: "ready" | "blocked" | "neutral") : React.CSSProperties => ({
@@ -750,6 +788,25 @@ export default function App() {
           ? "linear-gradient(180deg, #a34d4d 0%, #6d2e2e 45%, #341616 100%)"
           : "linear-gradient(180deg, #6c717a 0%, #41464f 45%, #23272e 100%)",
   });
+
+  const inventoryActionWrap: React.CSSProperties = {
+    display: "grid",
+    gap: 8,
+    justifyItems: "end",
+    alignContent: "center",
+    minWidth: 148,
+  };
+
+  const inventoryActionButton: React.CSSProperties = {
+    ...btn,
+    width: 148,
+    minWidth: 148,
+    maxWidth: 148,
+    minHeight: 42,
+    padding: "0 12px",
+    fontSize: 14,
+    justifyContent: "center",
+  };
 
 
   const crimeGroups = CRIME_CATEGORIES.map((cat) => ({
@@ -840,6 +897,29 @@ const shopGroups = [
   const currentTab: Tab = ((tab === "premium" && showPremiumNav) || restrictedNavTabs.includes(tab)) ? tab : "home";
   const isOwnJailRow = (row: { id: string; handle: string }) => row.id === data.player.id || row.handle === activeHandle;
   const isOwnHospitalRow = (row: { id: string; handle: string }) => row.id === data.player.id || row.handle === activeHandle;
+
+  const renderInventoryActionButtons = (item: any, mode: "equip" | "use") => (
+    <div style={inventoryActionWrap}>
+      <button
+        style={inventoryActionButton}
+        disabled={(state.inventory[item.id] || 0) <= 0}
+        onClick={() => runAction({ type: "useItem", itemId: item.id })}
+      >
+        {mode === "equip" ? "Equip" : "Use"}
+      </button>
+      <button
+        style={{
+          ...inventoryActionButton,
+          ...subBtn,
+          background: "linear-gradient(180deg, #6b5151 0%, #4f3a3a 50%, #302424 100%)",
+        }}
+        disabled={(state.inventory[item.id] || 0) <= 0}
+        onClick={() => runAction({ type: "sellItem", itemId: item.id })}
+      >
+        Sell for $${getSellItemPrice(item)}
+      </button>
+    </div>
+  );
 
   return (
     <div style={page}>
@@ -1145,7 +1225,7 @@ const shopGroups = [
                     ) : (
                       (ownedBySlot["utility"] || []).map((item) => (
                         <Row key={item.id} title={item.name} body={`${item.desc} • ${effectSummary(item)} • owned ${state.inventory[item.id] || 0}`}>
-                          <button style={btn} disabled={(state.inventory[item.id] || 0) <= 0} onClick={() => runAction({ type: "useItem", itemId: item.id })}>Equip</button>
+                          {renderInventoryActionButtons(item, "equip")}
                         </Row>
                       ))
                     )}
@@ -1158,7 +1238,7 @@ const shopGroups = [
                     ) : (
                       (ownedBySlot["utility_use"] || []).map((item) => (
                         <Row key={item.id} title={item.name} body={`${item.desc} • ${effectSummary(item)} • owned ${state.inventory[item.id] || 0}`}>
-                          <button style={btn} disabled={(state.inventory[item.id] || 0) <= 0} onClick={() => runAction({ type: "useItem", itemId: item.id })}>Use</button>
+                          {renderInventoryActionButtons(item, "use")}
                         </Row>
                       ))
                     )}
@@ -1175,7 +1255,7 @@ const shopGroups = [
                       ) : (
                         (ownedBySlot[slot] || []).map((item) => (
                           <Row key={item.id} title={item.name} body={`${item.desc} • ${effectSummary(item)} • owned ${state.inventory[item.id] || 0}`}>
-                            <button style={btn} disabled={(state.inventory[item.id] || 0) <= 0} onClick={() => runAction({ type: "useItem", itemId: item.id })}>Equip</button>
+                            {renderInventoryActionButtons(item, "equip")}
                           </Row>
                         ))
                       )}
@@ -1189,7 +1269,7 @@ const shopGroups = [
                     ) : (
                       (ownedBySlot["utility_use"] || []).map((item) => (
                         <Row key={item.id} title={item.name} body={`${item.desc} • ${effectSummary(item)} • owned ${state.inventory[item.id] || 0}`}>
-                          <button style={btn} disabled={(state.inventory[item.id] || 0) <= 0} onClick={() => runAction({ type: "useItem", itemId: item.id })}>Use</button>
+                          {renderInventoryActionButtons(item, "use")}
                         </Row>
                       ))
                     )}
@@ -1202,7 +1282,7 @@ const shopGroups = [
                     ) : (
                       (ownedBySlot["medical"] || []).map((item) => (
                         <Row key={item.id} title={item.name} body={`${item.desc} • ${effectSummary(item)} • owned ${state.inventory[item.id] || 0}`}>
-                          <button style={btn} disabled={(state.inventory[item.id] || 0) <= 0} onClick={() => runAction({ type: "useItem", itemId: item.id })}>Use</button>
+                          {renderInventoryActionButtons(item, "use")}
                         </Row>
                       ))
                     )}
@@ -1421,16 +1501,6 @@ const shopGroups = [
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {currentTab === "market" && (
-            <div style={section}>
-              {data.market.map((m) => (
-                <Row key={m.id} title={ITEMS.find((i) => i.id === m.itemId)?.name || m.itemId} body={`${m.quantity} units • $${m.unitPrice} each`}>
-                  <button style={btn} onClick={() => apiCall(`/api/demo/${activeHandle}/market/listings/${m.id}/buy`, { method: "POST" }).then(apply).catch((e) => showErrorNotice(e.message))}>Buy Listing</button>
-                </Row>
-              ))}
             </div>
           )}
 
