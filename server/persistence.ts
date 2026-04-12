@@ -2,7 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { applyGameAction, type GameAction } from "./gameplayEngine";
-import { CITIES, CRIME_CATEGORIES, EQUIPMENT_SLOTS, ITEMS, JOBS, getLevelFromRespect, getMaxBravery, makeInitialState, type EquipmentSlot, type PlayerState } from "../shared/gameData";
+import { CITIES, CRIME_CATEGORIES, EQUIPMENT_SLOTS, ITEMS, JOBS, getLevelFromRespect, getMaxBravery, getMaxEnergy, makeInitialState, type EquipmentSlot, type PlayerState } from "../shared/gameData";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 export const prisma = new PrismaClient({ adapter });
@@ -23,20 +23,24 @@ function normalizeFixedScheduleStat(value: number, updatedAt: string | undefined
   if (!Number.isFinite(updatedAtMs)) return { value, updatedAt: new Date(nowMs).toISOString() };
   if (value >= maxValue) return { value: maxValue, updatedAt: new Date(nowMs).toISOString() };
 
-  const nowBucketMs = Math.floor(nowMs / regenIntervalMs) * regenIntervalMs;
-  const updatedBucketMs = Math.floor(updatedAtMs / regenIntervalMs) * regenIntervalMs;
-  const ticks = Math.max(0, Math.floor((nowBucketMs - updatedBucketMs) / regenIntervalMs));
+  const elapsedMs = Math.max(0, nowMs - updatedAtMs);
+  const ticks = Math.floor(elapsedMs / regenIntervalMs);
   if (ticks <= 0) return { value, updatedAt: safeUpdatedAt };
 
   const regained = ticks * regenAmount;
   const nextValue = Math.min(maxValue, value + regained);
-  const nextAnchorMs = nextValue >= maxValue ? nowMs : nowBucketMs;
+  const nextAnchorMs = nextValue >= maxValue ? nowMs : updatedAtMs + ticks * regenIntervalMs;
   return { value: nextValue, updatedAt: new Date(nextAnchorMs).toISOString() };
 }
 
 function normalizeHealthStat(value: number, updatedAt: string | undefined) {
   if (value <= 0) return { value: 0, updatedAt: updatedAt || new Date().toISOString() };
   return normalizeFixedScheduleStat(value, updatedAt, BASE_MAX_HEALTH, HEALTH_REGEN_AMOUNT, HEALTH_REGEN_INTERVAL_MS);
+}
+
+function isPremiumActive(state: PlayerState) {
+  const premiumUntilMs = new Date((state as any).premiumUntil || 0).getTime();
+  return Number.isFinite(premiumUntilMs) && premiumUntilMs > Date.now();
 }
 
 function normalizeCrimeSkills(skills: Record<string, number> | undefined) {
@@ -114,8 +118,11 @@ inventory: (() => {
 
   const level = getLevelFromRespect(base.respect);
   const maxBravery = getMaxBravery(level);
-  const energy = normalizeFixedScheduleStat(base.energy, base.energyUpdatedAt, MAX_ENERGY, ENERGY_REGEN_AMOUNT, ENERGY_REGEN_INTERVAL_MS);
-  const bravery = normalizeFixedScheduleStat(base.bravery, base.braveryUpdatedAt, maxBravery, BRAVERY_REGEN_AMOUNT, BRAVERY_REGEN_INTERVAL_MS);
+  const maxEnergy = Number(getMaxEnergy(base as any) || MAX_ENERGY);
+  const energyRegenAmount = isPremiumActive(base) ? 10 : ENERGY_REGEN_AMOUNT;
+  const braveryRegenIntervalMs = isPremiumActive(base) ? 4 * 60 * 1000 : BRAVERY_REGEN_INTERVAL_MS;
+  const energy = normalizeFixedScheduleStat(base.energy, base.energyUpdatedAt, maxEnergy, energyRegenAmount, ENERGY_REGEN_INTERVAL_MS);
+  const bravery = normalizeFixedScheduleStat(base.bravery, base.braveryUpdatedAt, maxBravery, BRAVERY_REGEN_AMOUNT, braveryRegenIntervalMs);
   const maxHealth = getMaxHealthForStateLike(base.equipped);
   const health = normalizeFixedScheduleStat(base.health <= 0 ? 0 : base.health, base.healthUpdatedAt, maxHealth, HEALTH_REGEN_AMOUNT, HEALTH_REGEN_INTERVAL_MS);
 

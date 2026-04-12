@@ -89,6 +89,19 @@ const untilBoundary = (now: number, interval: number) => {
   return elapsed === 0 ? 0 : interval - elapsed;
 };
 
+const untilNextTickFromUpdatedAt = (
+  now: number,
+  updatedAt: string | undefined,
+  interval: number,
+  currentValue: number,
+  maxValue: number,
+) => {
+  if (currentValue >= maxValue) return 0;
+  const updatedAtMs = new Date(updatedAt || 0).getTime();
+  if (!Number.isFinite(updatedAtMs) || updatedAtMs <= 0) return interval;
+  return Math.max(0, updatedAtMs + interval - now);
+};
+
 const noticeBg = (kind: ActionResult["kind"]) =>
   kind === "pass" ? "#17361d" : kind === "fail" ? "#4f340f" : kind === "jail" ? "#4a1717" : "#1f2a36";
 
@@ -579,7 +592,7 @@ export default function App() {
 
 
   useEffect(() => {
-    const refreshTimer = window.setInterval(() => refresh(), 60_000);
+    const refreshTimer = window.setInterval(() => refresh(), 10_000);
     const clockTimer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => {
       window.clearInterval(refreshTimer);
@@ -1654,9 +1667,9 @@ const shopGroups = [
             </div>
           </div>
 
-          <Bar label="Health" value={Number(state.health || 0)} max={healthMax} fillColor="#b65454" sub={hospitalMs > 0 ? `Hospitalized for ${fmt(hospitalMs)}` : Number(state.health || 0) <= 0 ? "Hospital required" : Number(state.health || 0) >= healthMax ? "Full" : `Next +10 in ${fmt(untilBoundary(now, FIVE_MS))}`} />
-          <Bar label="Energy" value={Number(state.energy || 0)} max={energyMax} fillColor="#4f82c2" sub={Number(state.energy || 0) >= energyMax ? "Full" : `Next +${energyTickAmount} in ${fmt(untilBoundary(now, ENERGY_MS))}`} />
-          <Bar label="Bravery" value={Number(state.bravery || 0)} max={maxBravery} fillColor="#d19531" sub={Number(state.bravery || 0) >= maxBravery ? "Full" : `Next +1 in ${fmt(untilBoundary(now, braveryTickMs))}`} />
+          <Bar label="Health" value={Number(state.health || 0)} max={healthMax} fillColor="#b65454" sub={hospitalMs > 0 ? `Hospitalized for ${fmt(hospitalMs)}` : Number(state.health || 0) <= 0 ? "Hospital required" : Number(state.health || 0) >= healthMax ? "Full" : `Next +10 in ${fmt(untilNextTickFromUpdatedAt(now, state.healthUpdatedAt, FIVE_MS, Number(state.health || 0), healthMax))}`} />
+          <Bar label="Energy" value={Number(state.energy || 0)} max={energyMax} fillColor="#4f82c2" sub={Number(state.energy || 0) >= energyMax ? "Full" : `Next +${energyTickAmount} in ${fmt(untilNextTickFromUpdatedAt(now, state.energyUpdatedAt, ENERGY_MS, Number(state.energy || 0), energyMax))}`} />
+          <Bar label="Bravery" value={Number(state.bravery || 0)} max={maxBravery} fillColor="#d19531" sub={Number(state.bravery || 0) >= maxBravery ? "Full" : `Next +1 in ${fmt(untilNextTickFromUpdatedAt(now, state.braveryUpdatedAt, braveryTickMs, Number(state.bravery || 0), maxBravery))}`} />
 
           <div style={panel}>
             <div style={infoStatRow}><span style={infoStatLabel}>Strength</span><strong>{state.strength}</strong></div>
