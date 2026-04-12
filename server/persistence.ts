@@ -2,7 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { applyGameAction, type GameAction } from "./gameplayEngine";
-import { CRIME_CATEGORIES, EQUIPMENT_SLOTS, ITEMS, JOBS, getLevelFromRespect, getMaxBravery, makeInitialState, type EquipmentSlot, type PlayerState } from "../shared/gameData";
+import { CITIES, CRIME_CATEGORIES, EQUIPMENT_SLOTS, ITEMS, JOBS, getLevelFromRespect, getMaxBravery, makeInitialState, type EquipmentSlot, type PlayerState } from "../shared/gameData";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 export const prisma = new PrismaClient({ adapter });
@@ -175,11 +175,152 @@ export async function savePlayerState(playerId: string, state: PlayerState) {
   return prisma.player.update({ where: { id: playerId }, data: { stateJson: state } });
 }
 
+function applyPctModifier(value: number, pct: number) {
+  return Number((Number(value || 0) * (1 + Number(pct || 0) / 100)).toFixed(2));
+}
+
+function getJobForState(state: PlayerState) {
+  return JOBS.find((job) => job.id === state.job) || JOBS[0];
+}
+
+function getEffectiveFightStat(state: PlayerState, key: "strength" | "speed" | "defense") {
+  const job = getJobForState(state);
+  const flat = Number((job.bonus as any)?.[key] || 0) + getEquippedBonus(state.equipped, key);
+  const pct = getEquippedBonus(state.equipped, `${key}Pct`);
+  return applyPctModifier(Number((state as any)[key] || 0) + flat, pct);
+}
+
+function getFightPower(state: PlayerState) {
+  const job = getJobForState(state);
+  const basePower =
+    getEffectiveFightStat(state, "strength") +
+    getEffectiveFightStat(state, "speed") +
+    getEffectiveFightStat(state, "defense") +
+    Number(job.bonus?.fight || 0) +
+    getEquippedBonus(state.equipped, "combat");
+  const powerPct = getEquippedBonus(state.equipped, "combatPct");
+  return applyPctModifier(basePower, powerPct);
+}
+
+function cloneState(state: PlayerState): PlayerState {
+  return {
+    ...state,
+    inventory: { ...(state.inventory || {}) },
+    equipped: { ...(state.equipped || {}) },
+    crimeSkills: { ...((state as any).crimeSkills || {}) },
+    log: [...(state.log || [])],
+  };
+}
+
 export async function applyPlayerAction(handle: string, action: GameAction) {
   const player = await loadPlayerByHandle(handle);
   const result = applyGameAction(player.stateJson as PlayerState, action);
   await savePlayerState(player.id, result.state);
   return result;
+}
+
+export async function listFightTargets(actorHandle: string) {
+  const actor = await loadPlayerByHandle(actorHandle);
+  const actorState = actor.stateJson as PlayerState;
+  const players = await prisma.player.findMany({
+    where: { NOT: { id: actor.id } },
+    select: { id: true, handle: true, stateJson: true },
+    orderBy: { handle: "asc" },
+  });
+
+  return players
+    .map((player) => {
+      const state = normalizePlayerState(player.stateJson as PlayerState);
+      if (state.city !== actorState.city) return null;
+      if (state.jailUntil) return null;
+      if (state.hospitalUntil) return null;
+
+      return {
+        id: player.id,
+        handle: player.handle,
+        city: state.city,
+        cityName: CITIES.find((entry) => entry.id === state.city)?.name || state.city,
+        level: getLevelFromRespect(Number(state.respect || 0)),
+        status: "Ready to fight",
+      };
+    })
+    .filter(Boolean);
+}
+
+export async function attackPlayer(actorHandle: string, targetPlayerId: string) {
+  const actor = await loadPlayerByHandle(actorHandle);
+  const target = await loadPlayerById(targetPlayerId);
+
+  if (actor.id === target.id) throw new Error("You cannot attack yourself.");
+
+  const actorState = cloneState(actor.stateJson as PlayerState);
+  const targetState = cloneState(target.stateJson as PlayerState);
+
+  if (actorState.city !== targetState.city) throw new Error("You can only attack players in the same city.");
+  if (actorState.jailUntil) throw new Error("You are in jail.");
+  if (actorState.hospitalUntil) throw new Error("You are in hospital.");
+  if (targetState.jailUntil) throw new Error("That player is in jail.");
+  if (targetState.hospitalUntil) throw new Error("That player is in hospital.");
+  if (Number(actorState.energy || 0) < 20) throw new Error("Not enough energy.");
+
+  const nowIso = new Date().toISOString();
+  const cityName = CITIES.find((entry) => entry.id === actorState.city)?.name || actorState.city;
+  const actorPower = getFightPower(actorState) + Math.floor(Math.random() * 15);
+  const targetPower = getFightPower(targetState) + Math.floor(Math.random() * 13);
+  const success = actorPower >= targetPower;
+
+  actorState.energy = Math.max(0, Number(actorState.energy || 0) - 20);
+  actorState.energyUpdatedAt = nowIso;
+
+  if (success) {
+    const damage = 14 + Math.floor(Math.random() * 13);
+    const targetCash = Math.max(0, Number(targetState.cash || 0));
+    const stolenCash = Math.min(targetCash, Math.max(50, Math.round(targetCash * 0.1)));
+
+    actorState.cash = Number(actorState.cash || 0) + stolenCash;
+    targetState.cash = Math.max(0, targetCash - stolenCash);
+    actorState.respect = Number(actorState.respect || 0) + 1;
+    actorState.wins = Number(actorState.wins || 0) + 1;
+    targetState.losses = Number(targetState.losses || 0) + 1;
+    actorState.strength = Number(actorState.strength || 0) + (Math.random() < 0.5 ? 1 : 0);
+    actorState.speed = Number(actorState.speed || 0) + (Math.random() < 0.5 ? 1 : 0);
+    actorState.defense = Number(actorState.defense || 0) + (Math.random() < 0.5 ? 1 : 0);
+
+    targetState.health = Math.max(0, Number(targetState.health || 0) - damage);
+    targetState.healthUpdatedAt = nowIso;
+
+    if (targetState.health <= 0) {
+      targetState.hospitalUntil = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+      targetState.log = [`${actor.handle} attacked you in ${cityName} and put you in hospital.`, ...targetState.log].slice(0, 18);
+      actorState.log = [`Beat ${target.handle} in ${cityName}, took $${stolenCash}, and put them in hospital.`, ...actorState.log].slice(0, 18);
+    } else {
+      targetState.log = [`${actor.handle} attacked you in ${cityName} and dealt ${damage} damage.`, ...targetState.log].slice(0, 18);
+      actorState.log = [`Beat ${target.handle} in ${cityName} and took $${stolenCash}.`, ...actorState.log].slice(0, 18);
+    }
+
+    await savePlayerState(actor.id, actorState);
+    await savePlayerState(target.id, targetState);
+    return { kind: "pass" as const, title: "Fight won", message: `You beat ${target.handle} in ${cityName} and took $${stolenCash}.` };
+  }
+
+  const damage = 12 + Math.floor(Math.random() * 13);
+  actorState.losses = Number(actorState.losses || 0) + 1;
+  targetState.wins = Number(targetState.wins || 0) + 1;
+  actorState.health = Math.max(0, Number(actorState.health || 0) - damage);
+  actorState.healthUpdatedAt = nowIso;
+
+  if (actorState.health <= 0) {
+    actorState.hospitalUntil = new Date(Date.now() + 20 * 60 * 1000).toISOString();
+    actorState.log = [`You lost to ${target.handle} in ${cityName} and were put in hospital.`, ...actorState.log].slice(0, 18);
+    targetState.log = [`Defended against ${actor.handle} in ${cityName} and put them in hospital.`, ...targetState.log].slice(0, 18);
+  } else {
+    actorState.log = [`You lost to ${target.handle} in ${cityName} and took ${damage} damage.`, ...actorState.log].slice(0, 18);
+    targetState.log = [`Defended against ${actor.handle} in ${cityName}.`, ...targetState.log].slice(0, 18);
+  }
+
+  await savePlayerState(actor.id, actorState);
+  await savePlayerState(target.id, targetState);
+  return { kind: "fail" as const, title: "Fight lost", message: `You lost to ${target.handle} in ${cityName}.` };
 }
 
 function jailRemainingMinutes(jailUntil: string | null) {

@@ -9,7 +9,6 @@ import {
   EQUIPMENT_SLOTS,
   ITEMS,
   JOBS,
-  RIVALS,
   getLevelFromRespect,
   getMaxBravery,
   getMaxEnergy,
@@ -29,6 +28,7 @@ type Bootstrap = {
   jailRoster: Array<{ id: string; handle: string; remainingMinutes: number; bailCost: number }>;
   hospitalRoster: Array<{ id: string; handle: string; remainingMinutes: number }>;
   onlineUsers?: Array<{ id?: string; handle: string; status?: string }>;
+  fightRoster?: Array<{ id: string; handle: string; city: string; cityName: string; level: number; status?: string }>;
 };
 type ForumCategory = "updates" | "faqs" | "suggestions";
 type ForumThread = {
@@ -493,6 +493,15 @@ export default function App() {
     }
   };
 
+  const runPlayerAttack = async (targetPlayerId: string) => {
+    setErr("");
+    try {
+      apply(await apiCall(`/api/demo/${activeHandle}/fight/${targetPlayerId}`, { method: "POST" }));
+    } catch (e: any) {
+      showErrorNotice(e.message);
+    }
+  };
+
   const runBankAction = async (
     type: "personalDeposit" | "personalWithdraw",
     rawAmount: string,
@@ -751,6 +760,8 @@ export default function App() {
   const travelCooldownMs = state.travelAvailableAt ? Math.max(0, new Date(state.travelAvailableAt).getTime() - now) : 0;
   const travelCooldownShortText = travelCooldownMs > 0 ? `Wait ${Math.ceil(travelCooldownMs / 60000)}m` : "Travel";
   const premiumPlan = state.premiumAutoRenew ? "continuous" : premiumActive ? "monthly" : "none";
+  const currentCityName = CITIES.find((entry) => entry.id === state.city)?.name || state.city;
+  const fightTargets = Array.isArray(data.fightRoster) ? data.fightRoster : [];
 
   const getShopItemPrice = (item: any) => {
     const discount = Number(job.bonus?.itemDiscount || 0);
@@ -1138,8 +1149,14 @@ const shopGroups = [
 
           {currentTab === "fight" && (
             <div style={section}>
-              {RIVALS.map((r) => (
-                <Row key={r.id} title={r.name} body={`${r.note} • power ${r.power} • reward $${r.reward} • costs ${fightEnergyCost} energy`}>
+              <div style={muted}>You can only attack players who are in {currentCityName}. Each attack costs {fightEnergyCost} energy.</div>
+              {fightTargets.length === 0 ? <div style={muted}>No players are currently available to attack in {currentCityName}.</div> : null}
+              {fightTargets.map((target) => (
+                <Row
+                  key={target.id}
+                  title={target.handle}
+                  body={`Level ${target.level} • ${target.cityName} • ${target.status || "Ready to fight"} • costs ${fightEnergyCost} energy`}
+                >
                   <button
                     style={fixedActionButtonStyle(
                       Number(state.energy || 0) < fightEnergyCost
@@ -1149,7 +1166,7 @@ const shopGroups = [
                           : "ready"
                     )}
                     disabled={jailMs > 0 || hospitalMs > 0 || Number(state.energy || 0) < fightEnergyCost}
-                    onClick={() => runAction({ type: "fightRival", rivalId: r.id })}
+                    onClick={() => runPlayerAttack(target.id)}
                   >
                     {jailMs > 0
                       ? "Jailed"
@@ -1157,7 +1174,7 @@ const shopGroups = [
                         ? "Hospitalized"
                         : Number(state.energy || 0) < fightEnergyCost
                           ? "Not enough energy"
-                          : "Fight"}
+                          : "Attack"}
                   </button>
                 </Row>
               ))}

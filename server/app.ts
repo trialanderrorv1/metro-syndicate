@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { Server } from "socket.io";
 import { authRouter } from "./live-readiness/authRoutes";
 import { type GameAction } from "./gameplayEngine";
-import { applyPlayerAction, bailOutPlayer, bootstrapHandle, bustOutPlayer, createCrewForHandle, createCrewInvite, ensureDemoPlayer, listHospitalizedPlayers, listJailedPlayers, postCrewMessage, respondToInvite, reviveHospitalPlayer, searchPlayers } from "./persistence";
+import { applyPlayerAction, attackPlayer, bailOutPlayer, bootstrapHandle, bustOutPlayer, createCrewForHandle, createCrewInvite, ensureDemoPlayer, listFightTargets, listHospitalizedPlayers, listJailedPlayers, postCrewMessage, respondToInvite, reviveHospitalPlayer, searchPlayers } from "./persistence";
 import { attackDurableTerritory, durableTerritories, listNotificationsForHandle, markNotificationRead } from "./worldLive";
 import { buyListing, cancelListing, claimContract, createListing, listContracts, listMarket } from "./economyWorld";
 
@@ -60,6 +60,7 @@ async function fullBootstrap(handle: string) {
     jailRoster: await listJailedPlayers(),
     hospitalRoster: await listHospitalizedPlayers(),
     onlineUsers: listOnlineUsers(),
+    fightRoster: await listFightTargets(handle),
   };
 }
 
@@ -79,6 +80,12 @@ app.post("/api/demo/:handle/actions", async (req, res) => {
     const result = await applyPlayerAction(req.params.handle, action);
     res.json({ bootstrap: await fullBootstrap(req.params.handle), actionResult: result.actionResult });
   } catch (error: any) { res.status(400).json({ error: error.message || "Action failed" }); }
+});
+app.post("/api/demo/:handle/fight/:targetPlayerId", async (req, res) => {
+  try {
+    const actionResult = await attackPlayer(req.params.handle, req.params.targetPlayerId);
+    res.json({ bootstrap: await fullBootstrap(req.params.handle), actionResult });
+  } catch (error: any) { res.status(400).json({ error: error.message || "Fight failed" }); }
 });
 app.post("/api/demo/:handle/jail/:targetPlayerId/bail", async (req, res) => {
   try { const actionResult = await bailOutPlayer(req.params.handle, req.params.targetPlayerId); res.json({ bootstrap: await fullBootstrap(req.params.handle), actionResult }); }
