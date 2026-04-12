@@ -1,4 +1,4 @@
-import { CITIES, CRIMES, ITEMS, JOBS, RIVALS, getLevelFromRespect, getMaxBravery, getMaxEnergy, type PlayerState } from "../shared/gameData";
+import { CITIES, CRIMES, ITEMS, JOBS, PREMIUM_PUMP_COST, PREMIUM_PUMP_DURATION_MS, RIVALS, getLevelFromRespect, getMaxBravery, getMaxEnergy, type PlayerState } from "../shared/gameData";
 
 export type GameAction =
   | { type: "hospital" }
@@ -13,7 +13,8 @@ export type GameAction =
   | { type: "personalDeposit"; amount: number }
   | { type: "personalWithdraw"; amount: number }
   | { type: "activatePremium"; plan: "monthly" | "continuous" }
-  | { type: "cancelPremiumAutoRenew" };
+  | { type: "cancelPremiumAutoRenew" }
+  | { type: "buyPremiumPump"; pumpType: "health" | "energy" | "bravery" };
 
 const MAX_HEALTH = 100;
 const MIN_CRIME_HOSPITAL_MINUTES = 5;
@@ -360,6 +361,34 @@ export function applyGameAction(state: PlayerState, action: GameAction) {
       if (!(next as any).premiumAutoRenew) throw new Error("Continuous premium is not active");
       (next as any).premiumAutoRenew = false;
       push("Continuous premium auto-renew cancelled.");
+      break;
+    }
+
+    case "buyPremiumPump": {
+      if (!isPremiumActive(next)) throw new Error("Premium membership required.");
+      if (Number((next as any).premiumCoins || 0) < PREMIUM_PUMP_COST) throw new Error("Not enough premium coins.");
+
+      const pumpKey =
+        action.pumpType === "health"
+          ? "premiumHealthPumpUntil"
+          : action.pumpType === "energy"
+            ? "premiumEnergyPumpUntil"
+            : "premiumBraveryPumpUntil";
+
+      const pumpName =
+        action.pumpType === "health"
+          ? "Health Pump"
+          : action.pumpType === "energy"
+            ? "Energy Pump"
+            : "Bravery Pump";
+
+      const currentUntilMs = new Date((next as any)[pumpKey] || 0).getTime();
+      const baseUntilMs = Number.isFinite(currentUntilMs) && currentUntilMs > Date.now() ? currentUntilMs : Date.now();
+
+      (next as any)[pumpKey] = new Date(baseUntilMs + PREMIUM_PUMP_DURATION_MS).toISOString();
+      (next as any).premiumCoins = Math.max(0, Number((next as any).premiumCoins || 0) - PREMIUM_PUMP_COST);
+
+      push(`Bought ${pumpName} for ${PREMIUM_PUMP_COST} premium coins. x2 regen is active for 2 hours.`);
       break;
     }
     case "personalDeposit": {

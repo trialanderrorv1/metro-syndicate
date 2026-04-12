@@ -14,6 +14,8 @@ import {
   getMaxEnergy,
   getRespectForLevel,
   getRespectNeededForNextLevel,
+  PREMIUM_PUMP_COST,
+  PREMIUM_PUMP_DURATION_MS,
 } from "../shared/gameData";
 
 type ActionResult = { kind: "pass" | "fail" | "jail" | "info"; title: string; message: string };
@@ -82,6 +84,14 @@ const fmt = (ms: number) => {
 const fmtPremiumDays = (ms: number) => {
   const days = Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
   return `${days} day${days === 1 ? "" : "s"}`;
+};
+
+const fmtShortDuration = (ms: number) => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 };
 
 const untilBoundary = (now: number, interval: number) => {
@@ -760,7 +770,6 @@ export default function App() {
   const premiumActive = !!state.premiumUntil && new Date(state.premiumUntil).getTime() > now;
   const premiumRemainingMs = premiumActive ? Math.max(0, new Date(state.premiumUntil).getTime() - now) : 0;
   const energyTickAmount = premiumActive ? 10 : 5;
-  const braveryTickMs = premiumActive ? 4 * 60 * 1000 : FIVE_MS;
   const levelProgressPct = level >= 100 ? 100 : Math.max(0, Math.min(100, ((Number(state.respect || 0) - currentLevelFloor) / Math.max(1, nextLevelFloor - currentLevelFloor)) * 100));
 
   const payReady = (() => {
@@ -773,6 +782,15 @@ export default function App() {
   const travelCooldownMs = state.travelAvailableAt ? Math.max(0, new Date(state.travelAvailableAt).getTime() - now) : 0;
   const travelCooldownShortText = travelCooldownMs > 0 ? `Wait ${Math.ceil(travelCooldownMs / 60000)}m` : "Travel";
   const premiumPlan = state.premiumAutoRenew ? "continuous" : premiumActive ? "monthly" : "none";
+  const premiumHealthPumpRemainingMs = state.premiumHealthPumpUntil ? Math.max(0, new Date(state.premiumHealthPumpUntil).getTime() - now) : 0;
+  const premiumEnergyPumpRemainingMs = state.premiumEnergyPumpUntil ? Math.max(0, new Date(state.premiumEnergyPumpUntil).getTime() - now) : 0;
+  const premiumBraveryPumpRemainingMs = state.premiumBraveryPumpUntil ? Math.max(0, new Date(state.premiumBraveryPumpUntil).getTime() - now) : 0;
+  const premiumHealthPumpActive = premiumHealthPumpRemainingMs > 0;
+  const premiumEnergyPumpActive = premiumEnergyPumpRemainingMs > 0;
+  const premiumBraveryPumpActive = premiumBraveryPumpRemainingMs > 0;
+  const healthTickMs = premiumHealthPumpActive ? Math.max(1, Math.floor(FIVE_MS / 2)) : FIVE_MS;
+  const energyTickMs = premiumEnergyPumpActive ? Math.max(1, Math.floor(ENERGY_MS / 2)) : ENERGY_MS;
+  const braveryTickMs = premiumBraveryPumpActive ? Math.max(1, Math.floor((premiumActive ? 4 * 60 * 1000 : FIVE_MS) / 2)) : (premiumActive ? 4 * 60 * 1000 : FIVE_MS);
   const currentCityName = CITIES.find((entry) => entry.id === state.city)?.name || state.city;
   const fightTargets = Array.isArray(data.fightRoster) ? data.fightRoster : [];
 
@@ -846,6 +864,30 @@ export default function App() {
   ) as Record<string, any[]>;
   const forumThreadsForCategory = forumThreads.filter((thread) => thread.category === forumCategory);
 
+const premiumPumpOffers = [
+  {
+    id: "premium-pump-health",
+    pumpType: "health" as const,
+    name: "Health Overdrive",
+    desc: "x2 health regen for 2 hours.",
+    status: premiumHealthPumpActive ? `Active • ${fmtShortDuration(premiumHealthPumpRemainingMs)} left` : "Inactive",
+  },
+  {
+    id: "premium-pump-energy",
+    pumpType: "energy" as const,
+    name: "Energy Overdrive",
+    desc: "x2 energy regen for 2 hours.",
+    status: premiumEnergyPumpActive ? `Active • ${fmtShortDuration(premiumEnergyPumpRemainingMs)} left` : "Inactive",
+  },
+  {
+    id: "premium-pump-bravery",
+    pumpType: "bravery" as const,
+    name: "Bravery Overdrive",
+    desc: "x2 bravery regen for 2 hours.",
+    status: premiumBraveryPumpActive ? `Active • ${fmtShortDuration(premiumBraveryPumpRemainingMs)} left` : "Inactive",
+  },
+];
+
 const shopGroups = [
   {
     id: "weapons",
@@ -871,6 +913,14 @@ const shopGroups = [
     subtitle: "Utility gear, max-health boosters, and support consumables.",
     items: ITEMS.filter((item) => item.shop === "utilities"),
   },
+  ...(premiumActive
+    ? [{
+        id: "premium_pumps",
+        name: "Premium Pumps",
+        subtitle: "Premium-only overdrive boosts. x2 regen for 2 hours for 20 premium coins each.",
+        items: [],
+      }]
+    : []),
 ];
 
   const battleStats = [
@@ -1353,38 +1403,81 @@ const shopGroups = [
     </div>
     {shopGroups.map((shop) => {
       const open = openShop === shop.id;
-      const visibleItems = showAffordableOnly ? shop.items.filter((item) => canAffordItem(item)) : shop.items;
+      const isPremiumShop = shop.id === "premium_pumps";
+      const visibleItems = showAffordableOnly && !isPremiumShop ? shop.items.filter((item) => canAffordItem(item)) : shop.items;
       return (
-        <div key={shop.id} style={crimeBox}>
+        <div
+          key={shop.id}
+          style={
+            isPremiumShop
+              ? {
+                  ...crimeBox,
+                  borderColor: "#b8902f",
+                  background: "linear-gradient(180deg, rgba(91,73,32,0.88) 0%, rgba(45,36,16,0.94) 100%)",
+                }
+              : crimeBox
+          }
+        >
           <button
-            style={crimeToggle}
+            style={
+              isPremiumShop
+                ? {
+                    ...crimeToggle,
+                    borderColor: "#d8ba5a",
+                    background: "linear-gradient(180deg, rgba(143,111,36,0.96) 0%, rgba(95,74,22,0.96) 45%, rgba(47,36,13,0.98) 100%)",
+                  }
+                : crimeToggle
+            }
             onClick={() => setOpenShop(open ? null : shop.id)}
           >
             <div>
-              <div style={{ fontWeight: 800, fontSize: 18 }}>{shop.name}</div>
-              <div style={muted}>{shop.subtitle}</div>
+              <div style={{ fontWeight: 800, fontSize: 18, color: isPremiumShop ? "#f5e2a6" : undefined }}>{shop.name}</div>
+              <div style={isPremiumShop ? { ...muted, color: "#efe2bf" } : muted}>{shop.subtitle}</div>
             </div>
             <div style={{ fontWeight: 800 }}>{open ? "−" : "+"}</div>
           </button>
 
           {open ? (
             <div style={{ display: "grid", gap: 8 }}>
-              {visibleItems.length === 0 ? <div style={muted}>No items in this shop match your current budget.</div> : null}
-              {visibleItems.map((item) => {
-                const price = getShopItemPrice(item);
-                const affordable = canAffordItem(item);
-                return (
-                  <Row key={item.id} title={item.name} body={`${item.desc} • ${effectSummary(item)} • $${price}`}>
-                    <button
-                      style={fixedActionButtonStyle(affordable ? "ready" : "blocked")}
-                      disabled={!affordable}
-                      onClick={() => runAction({ type: "buyItem", itemId: item.id })}
+              {isPremiumShop ? (
+                premiumPumpOffers.map((offer) => {
+                  const affordable = Number(state.premiumCoins || 0) >= PREMIUM_PUMP_COST;
+                  return (
+                    <Row
+                      key={offer.id}
+                      title={offer.name}
+                      body={`${offer.desc} • Costs ${PREMIUM_PUMP_COST} premium coins • ${offer.status} • Stacks with premium regen timers`}
                     >
-                      {affordable ? "Buy" : "Not enough money"}
-                    </button>
-                  </Row>
-                );
-              })}
+                      <button
+                        style={fixedActionButtonStyle(affordable ? "ready" : "blocked")}
+                        disabled={!affordable}
+                        onClick={() => runAction({ type: "buyPremiumPump", pumpType: offer.pumpType })}
+                      >
+                        {affordable ? `Buy for ${PREMIUM_PUMP_COST} coins` : "Not enough coins"}
+                      </button>
+                    </Row>
+                  );
+                })
+              ) : (
+                <>
+                  {visibleItems.length === 0 ? <div style={muted}>No items in this shop match your current budget.</div> : null}
+                  {visibleItems.map((item) => {
+                    const price = getShopItemPrice(item);
+                    const affordable = canAffordItem(item);
+                    return (
+                      <Row key={item.id} title={item.name} body={`${item.desc} • ${effectSummary(item)} • $${price}`}>
+                        <button
+                          style={fixedActionButtonStyle(affordable ? "ready" : "blocked")}
+                          disabled={!affordable}
+                          onClick={() => runAction({ type: "buyItem", itemId: item.id })}
+                        >
+                          {affordable ? "Buy" : "Not enough money"}
+                        </button>
+                      </Row>
+                    );
+                  })}
+                </>
+              )}
             </div>
           ) : null}
         </div>
@@ -1461,8 +1554,18 @@ const shopGroups = [
                 <div style={statRow}><span style={statLabel}>Plan</span><strong>{premiumPlan === "continuous" ? "Continuous" : premiumPlan === "monthly" ? "Monthly" : "None"}</strong></div>
                 <div style={statRow}><span style={statLabel}>Premium Coins</span><strong>{state.premiumCoins || 0}</strong></div>
                 <div style={statRow}><span style={statLabel}>Max Energy</span><strong>{energyMax}</strong></div>
-                <div style={statRow}><span style={statLabel}>Energy Tick</span><strong>{energyTickAmount} / 10m</strong></div>
-                <div style={statRow}><span style={statLabel}>Bravery Tick</span><strong>{premiumActive ? "1 / 4m" : "1 / 5m"}</strong></div>
+                <div style={statRow}><span style={statLabel}>Energy Tick</span><strong>{energyTickAmount} / {Math.round(energyTickMs / 60000)}m</strong></div>
+                <div style={statRow}><span style={statLabel}>Bravery Tick</span><strong>{`1 / ${Math.round(braveryTickMs / 60000)}m`}</strong></div>
+                <div style={statRow}><span style={statLabel}>Health Pump</span><strong>{premiumHealthPumpActive ? fmtShortDuration(premiumHealthPumpRemainingMs) : "Inactive"}</strong></div>
+                <div style={statRow}><span style={statLabel}>Energy Pump</span><strong>{premiumEnergyPumpActive ? fmtShortDuration(premiumEnergyPumpRemainingMs) : "Inactive"}</strong></div>
+                <div style={statRow}><span style={statLabel}>Bravery Pump</span><strong>{premiumBraveryPumpActive ? fmtShortDuration(premiumBraveryPumpRemainingMs) : "Inactive"}</strong></div>
+              </div>
+
+              <div style={{ ...crimeBox, borderColor: "#b8902f", background: "linear-gradient(180deg, rgba(91,73,32,0.88) 0%, rgba(45,36,16,0.94) 100%)" }}>
+                <div style={{ ...groupHeader, color: "#f3dda0" }}>Premium Pumps Shop</div>
+                <div style={{ ...muted, color: "#efe2bf" }}>
+                  Premium-only overdrive boosts. Each costs {PREMIUM_PUMP_COST} premium coins and lasts {fmtShortDuration(PREMIUM_PUMP_DURATION_MS)}. These x2 boosts stack with your current premium regen timers.
+                </div>
               </div>
 
               <Row title="Monthly Premium" body="£3.00 per month • adds 100 premium coins and extends the premium timer by 30 days.">
@@ -1667,9 +1770,9 @@ const shopGroups = [
             </div>
           </div>
 
-          <Bar label="Health" value={Number(state.health || 0)} max={healthMax} fillColor="#b65454" sub={hospitalMs > 0 ? `Hospitalized for ${fmt(hospitalMs)}` : Number(state.health || 0) <= 0 ? "Hospital required" : Number(state.health || 0) >= healthMax ? "Full" : `Next +10 in ${fmt(untilNextTickFromUpdatedAt(now, state.healthUpdatedAt, FIVE_MS, Number(state.health || 0), healthMax))}`} />
-          <Bar label="Energy" value={Number(state.energy || 0)} max={energyMax} fillColor="#4f82c2" sub={Number(state.energy || 0) >= energyMax ? "Full" : `Next +${energyTickAmount} in ${fmt(untilNextTickFromUpdatedAt(now, state.energyUpdatedAt, ENERGY_MS, Number(state.energy || 0), energyMax))}`} />
-          <Bar label="Bravery" value={Number(state.bravery || 0)} max={maxBravery} fillColor="#d19531" sub={Number(state.bravery || 0) >= maxBravery ? "Full" : `Next +1 in ${fmt(untilNextTickFromUpdatedAt(now, state.braveryUpdatedAt, braveryTickMs, Number(state.bravery || 0), maxBravery))}`} />
+          <Bar label="Health" value={Number(state.health || 0)} max={healthMax} fillColor="#b65454" sub={hospitalMs > 0 ? `Hospitalized for ${fmt(hospitalMs)}` : Number(state.health || 0) <= 0 ? "Hospital required" : Number(state.health || 0) >= healthMax ? "Full" : `Next +10 in ${fmt(untilNextTickFromUpdatedAt(now, state.healthUpdatedAt, healthTickMs, Number(state.health || 0), healthMax))}${premiumHealthPumpActive ? " • x2 active" : ""}`} />
+          <Bar label="Energy" value={Number(state.energy || 0)} max={energyMax} fillColor="#4f82c2" sub={Number(state.energy || 0) >= energyMax ? "Full" : `Next +${energyTickAmount} in ${fmt(untilNextTickFromUpdatedAt(now, state.energyUpdatedAt, energyTickMs, Number(state.energy || 0), energyMax))}${premiumEnergyPumpActive ? " • x2 active" : ""}`} />
+          <Bar label="Bravery" value={Number(state.bravery || 0)} max={maxBravery} fillColor="#d19531" sub={Number(state.bravery || 0) >= maxBravery ? "Full" : `Next +1 in ${fmt(untilNextTickFromUpdatedAt(now, state.braveryUpdatedAt, braveryTickMs, Number(state.bravery || 0), maxBravery))}${premiumBraveryPumpActive ? " • x2 active" : ""}`} />
 
           <div style={panel}>
             <div style={infoStatRow}><span style={infoStatLabel}>Strength</span><strong>{state.strength}</strong></div>

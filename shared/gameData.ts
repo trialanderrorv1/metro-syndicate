@@ -28,6 +28,9 @@ export type PlayerState = {
   premiumUntil: string | null;
   premiumAutoRenew: boolean;
   premiumCoins: number;
+  premiumHealthPumpUntil: string | null;
+  premiumEnergyPumpUntil: string | null;
+  premiumBraveryPumpUntil: string | null;
   day: number;
   wins: number;
   losses: number;
@@ -46,6 +49,8 @@ export const MAX_LEVEL = 100;
 export const BASE_RESPECT_STEP = 20;
 export const RESPECT_STEP_GROWTH = 8;
 export const PREMIUM_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+export const PREMIUM_PUMP_COST = 20;
+export const PREMIUM_PUMP_DURATION_MS = 2 * 60 * 60 * 1000;
 export const BASE_MAX_ENERGY = 100;
 export const PREMIUM_MAX_ENERGY_BONUS = 50;
 
@@ -213,6 +218,9 @@ export function makeInitialState(alias = "Rookie"): PlayerState {
     premiumUntil: null,
     premiumAutoRenew: false,
     premiumCoins: 0,
+    premiumHealthPumpUntil: null,
+    premiumEnergyPumpUntil: null,
+    premiumBraveryPumpUntil: null,
     day: 1,
     wins: 0,
     losses: 0,

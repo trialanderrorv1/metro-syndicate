@@ -98,6 +98,12 @@ function normalizePlayerState(state: PlayerState): PlayerState {
     jobChangedAt: state.jobChangedAt || null,
     jailUntil: state.jailUntil || null,
     hospitalUntil: state.hospitalUntil || null,
+    premiumUntil: (state as any).premiumUntil || null,
+    premiumAutoRenew: !!(state as any).premiumAutoRenew,
+    premiumCoins: Number((state as any).premiumCoins ?? 0),
+    premiumHealthPumpUntil: (state as any).premiumHealthPumpUntil || null,
+    premiumEnergyPumpUntil: (state as any).premiumEnergyPumpUntil || null,
+    premiumBraveryPumpUntil: (state as any).premiumBraveryPumpUntil || null,
     day: Number(state.day ?? 1),
     wins: Number(state.wins ?? 0),
     losses: Number(state.losses ?? 0),
@@ -119,12 +125,31 @@ inventory: (() => {
   const level = getLevelFromRespect(base.respect);
   const maxBravery = getMaxBravery(level);
   const maxEnergy = Number(getMaxEnergy(base as any) || MAX_ENERGY);
+
+  const premiumHealthPumpMs = new Date((base as any).premiumHealthPumpUntil || 0).getTime();
+  const premiumEnergyPumpMs = new Date((base as any).premiumEnergyPumpUntil || 0).getTime();
+  const premiumBraveryPumpMs = new Date((base as any).premiumBraveryPumpUntil || 0).getTime();
+
+  const premiumHealthPumpUntil = Number.isFinite(premiumHealthPumpMs) && premiumHealthPumpMs > Date.now()
+    ? (base as any).premiumHealthPumpUntil
+    : null;
+  const premiumEnergyPumpUntil = Number.isFinite(premiumEnergyPumpMs) && premiumEnergyPumpMs > Date.now()
+    ? (base as any).premiumEnergyPumpUntil
+    : null;
+  const premiumBraveryPumpUntil = Number.isFinite(premiumBraveryPumpMs) && premiumBraveryPumpMs > Date.now()
+    ? (base as any).premiumBraveryPumpUntil
+    : null;
+
   const energyRegenAmount = isPremiumActive(base) ? 10 : ENERGY_REGEN_AMOUNT;
-  const braveryRegenIntervalMs = isPremiumActive(base) ? 4 * 60 * 1000 : BRAVERY_REGEN_INTERVAL_MS;
-  const energy = normalizeFixedScheduleStat(base.energy, base.energyUpdatedAt, maxEnergy, energyRegenAmount, ENERGY_REGEN_INTERVAL_MS);
+  const energyRegenIntervalMs = premiumEnergyPumpUntil ? Math.max(1, Math.floor(ENERGY_REGEN_INTERVAL_MS / 2)) : ENERGY_REGEN_INTERVAL_MS;
+  const braveryBaseIntervalMs = isPremiumActive(base) ? 4 * 60 * 1000 : BRAVERY_REGEN_INTERVAL_MS;
+  const braveryRegenIntervalMs = premiumBraveryPumpUntil ? Math.max(1, Math.floor(braveryBaseIntervalMs / 2)) : braveryBaseIntervalMs;
+  const healthRegenIntervalMs = premiumHealthPumpUntil ? Math.max(1, Math.floor(HEALTH_REGEN_INTERVAL_MS / 2)) : HEALTH_REGEN_INTERVAL_MS;
+
+  const energy = normalizeFixedScheduleStat(base.energy, base.energyUpdatedAt, maxEnergy, energyRegenAmount, energyRegenIntervalMs);
   const bravery = normalizeFixedScheduleStat(base.bravery, base.braveryUpdatedAt, maxBravery, BRAVERY_REGEN_AMOUNT, braveryRegenIntervalMs);
   const maxHealth = getMaxHealthForStateLike(base.equipped);
-  const health = normalizeFixedScheduleStat(base.health <= 0 ? 0 : base.health, base.healthUpdatedAt, maxHealth, HEALTH_REGEN_AMOUNT, HEALTH_REGEN_INTERVAL_MS);
+  const health = normalizeFixedScheduleStat(base.health <= 0 ? 0 : base.health, base.healthUpdatedAt, maxHealth, HEALTH_REGEN_AMOUNT, healthRegenIntervalMs);
 
   const jailMs = base.jailUntil ? new Date(base.jailUntil).getTime() : 0;
   const jailUntil = Number.isFinite(jailMs) && jailMs > Date.now() ? base.jailUntil : null;
@@ -149,6 +174,9 @@ inventory: (() => {
     braveryUpdatedAt: bravery.updatedAt,
     health: nextHealth,
     healthUpdatedAt: nextHealthUpdatedAt,
+    premiumHealthPumpUntil,
+    premiumEnergyPumpUntil,
+    premiumBraveryPumpUntil,
   };
 }
 
