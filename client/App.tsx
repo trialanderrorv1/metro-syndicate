@@ -28,6 +28,7 @@ type Bootstrap = {
   notifications: any[];
   jailRoster: Array<{ id: string; handle: string; remainingMinutes: number; bailCost: number }>;
   hospitalRoster: Array<{ id: string; handle: string; remainingMinutes: number }>;
+  onlineUsers?: Array<{ id?: string; handle: string; status?: string }>;
 };
 type ForumCategory = "updates" | "faqs" | "suggestions";
 type ForumThread = {
@@ -898,6 +899,26 @@ const shopGroups = [
   const isOwnJailRow = (row: { id: string; handle: string }) => row.id === data.player.id || row.handle === activeHandle;
   const isOwnHospitalRow = (row: { id: string; handle: string }) => row.id === data.player.id || row.handle === activeHandle;
 
+  const onlineUsers = (() => {
+    const raw = Array.isArray(data.onlineUsers) ? data.onlineUsers : [];
+    if (raw.length > 0) {
+      const seen = new Set<string>();
+      return raw
+        .map((entry) => ({
+          handle: String(entry?.handle || "").trim(),
+          status: String(entry?.status || "Online").trim() || "Online",
+        }))
+        .filter((entry) => entry.handle.length > 0 && !seen.has(entry.handle) && (seen.add(entry.handle), true));
+    }
+
+    return [
+      {
+        handle: data.player.handle,
+        status: "Online",
+      },
+    ];
+  })();
+
   const renderInventoryActionButtons = (item: any, mode: "equip" | "use") => (
     <div style={inventoryActionWrap}>
       <button
@@ -1548,6 +1569,71 @@ const shopGroups = [
               <div style={statRow}><span style={statLabel}>Hospital:</span><strong>{hospitalMs > 0 ? fmt(hospitalMs) : "Clear"}</strong></div>
               <div style={statRow}><span style={statLabel}>Premium:</span><strong>{premiumActive ? (state.premiumAutoRenew ? "Continuous" : "Monthly") : "None"}</strong></div>
               <div style={statRow}><span style={statLabel}>Coins:</span><strong>{state.premiumCoins || 0}</strong></div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              ...panel,
+              padding: 0,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "12px 14px",
+                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                background: "linear-gradient(180deg, rgba(35,41,50,0.96) 0%, rgba(21,25,31,0.96) 100%)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <strong style={{ letterSpacing: "0.03em" }}>Users Online</strong>
+              <span style={{ color: "#a8f0a9", fontWeight: 800 }}>{onlineUsers.length}</span>
+            </div>
+
+            <div style={{ display: "grid", gap: 0 }}>
+              {onlineUsers.map((entry, index) => (
+                <div
+                  key={`${entry.handle}-${index}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "11px 14px",
+                    borderTop: index === 0 ? "none" : "1px solid rgba(255,255,255,0.06)",
+                    background: index % 2 === 0 ? "rgba(255,255,255,0.015)" : "rgba(255,255,255,0.03)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    <span
+                      style={{
+                        width: 9,
+                        height: 9,
+                        minWidth: 9,
+                        borderRadius: 999,
+                        background: "#64d26f",
+                        boxShadow: "0 0 10px rgba(100,210,111,0.65)",
+                      }}
+                    />
+                    <span
+                      style={{
+                        color: "#eef3f8",
+                        fontWeight: 700,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {entry.handle}
+                    </span>
+                  </div>
+                  <span style={{ color: "#9eb0c2", fontSize: 12, fontWeight: 700 }}>{entry.status}</span>
+                </div>
+              ))}
             </div>
           </div>
 

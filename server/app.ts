@@ -14,13 +14,53 @@ const io = new Server(httpServer, { cors: { origin: true, credentials: true } })
 const PORT = Number(process.env.PORT || 4000);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:3000";
 
+const ONLINE_TTL_MS = 5 * 60 * 1000;
+const onlinePresence = new Map<string, { handle: string; lastSeenAt: number }>();
+
+function markHandleOnline(handle: string) {
+  const cleanHandle = String(handle || "").trim();
+  if (!cleanHandle) return;
+  onlinePresence.set(cleanHandle.toLowerCase(), { handle: cleanHandle, lastSeenAt: Date.now() });
+}
+
+function listOnlineUsers() {
+  const cutoff = Date.now() - ONLINE_TTL_MS;
+  const rows: Array<{ handle: string; status: string }> = [];
+  for (const [key, entry] of onlinePresence.entries()) {
+    if (entry.lastSeenAt >= cutoff) {
+      rows.push({ handle: entry.handle, status: "Online" });
+    } else {
+      onlinePresence.delete(key);
+    }
+  }
+  rows.sort((a, b) => a.handle.localeCompare(b.handle));
+  return rows;
+}
+
+setInterval(() => {
+  const cutoff = Date.now() - ONLINE_TTL_MS;
+  for (const [key, entry] of onlinePresence.entries()) {
+    if (entry.lastSeenAt < cutoff) onlinePresence.delete(key);
+  }
+}, 60_000);
+
 app.use(cors({ origin: CLIENT_ORIGIN, credentials: true }));
 app.use(express.json({ limit: "1mb" }));
 app.use("/auth", authRouter);
 
 
 async function fullBootstrap(handle: string) {
-  return { ...(await bootstrapHandle(handle)), market: await listMarket(), contracts: await listContracts(), territories: await durableTerritories(), notifications: await listNotificationsForHandle(handle), jailRoster: await listJailedPlayers(), hospitalRoster: await listHospitalizedPlayers() };
+  markHandleOnline(handle);
+  return {
+    ...(await bootstrapHandle(handle)),
+    market: await listMarket(),
+    contracts: await listContracts(),
+    territories: await durableTerritories(),
+    notifications: await listNotificationsForHandle(handle),
+    jailRoster: await listJailedPlayers(),
+    hospitalRoster: await listHospitalizedPlayers(),
+    onlineUsers: listOnlineUsers(),
+  };
 }
 
 app.get("/health", (_req, res) => res.json({ ok: true, service: "api", mode: "main-shell", ts: new Date().toISOString() }));
