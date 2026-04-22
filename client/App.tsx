@@ -961,6 +961,40 @@ const shopGroups = [
     item: ITEMS.find((entry) => entry.id === state.equipped?.[slot]) || null,
   }));
 
+  const safeNotifications = Array.isArray(data.notifications) ? data.notifications : [];
+  const unreadNotifications = safeNotifications.filter((entry: any) => !(entry?.read || entry?.isRead || entry?.readAt));
+  const liveContracts = Array.isArray(data.contracts) ? data.contracts : [];
+  const homeFeed = (recentAttackLog.length ? recentAttackLog : (state.log || [])).slice(0, 4);
+  const territoryHoldings = (Array.isArray(data.territories) ? data.territories : []).filter((territory: any) => {
+    const crewId = String(data.crew?.id || "");
+    if (!crewId) return false;
+    return String(territory?.ownerCrewId || territory?.crewId || territory?.ownerId || "") === crewId;
+  });
+  const totalTerritoryIncome = territoryHoldings.reduce((sum: number, territory: any) => sum + Number(territory?.hourlyIncome || 0), 0);
+  const currentCityTerritoryCount = territoryHoldings.filter((territory: any) => String(territory?.cityId || "") === String(state.city || "")).length;
+  const notificationMix = (() => {
+    const buckets = safeNotifications.reduce(
+      (acc: Record<string, number>, entry: any) => {
+        const haystack = `${entry?.title || ""} ${entry?.body || ""} ${entry?.kind || ""}`.toLowerCase();
+        if (/fight|attack|gang|combat|revenge/.test(haystack)) acc.combat += 1;
+        else if (/contract/.test(haystack)) acc.contracts += 1;
+        else if (/territor/.test(haystack)) acc.territory += 1;
+        else if (/crew|invite|application|leader|member/.test(haystack)) acc.crew += 1;
+        else if (/job|crime|train|bank|deposit|withdraw|pay|progress/.test(haystack)) acc.progress += 1;
+        else acc.general += 1;
+        return acc;
+      },
+      { combat: 0, contracts: 0, territory: 0, crew: 0, progress: 0, general: 0 }
+    );
+    return [
+      buckets.combat ? `${buckets.combat} combat` : null,
+      buckets.contracts ? `${buckets.contracts} contracts` : null,
+      buckets.territory ? `${buckets.territory} territory` : null,
+      buckets.crew ? `${buckets.crew} crew` : null,
+      buckets.progress ? `${buckets.progress} progress` : null,
+    ].filter(Boolean).slice(0, 3).join(" • ") || "General updates only";
+  })();
+
   const isJailed = jailMs > 0;
   const isHospitalized = hospitalMs > 0;
   const restrictedNavTabs: Tab[] = isJailed
@@ -1058,15 +1092,104 @@ const shopGroups = [
 
           {currentTab === "home" && (
             <div style={section}>
-              <div style={grid4}>
-                <Mini label="Level" value={String(level)} />
-                <Mini label="Respect" value={fmtRespect(Number(state.respect || 0))} />
-                <Mini label="Crime W/L" value={`${state.crimesSucceeded}/${state.crimesFailed}`} />
-                <Mini label="Busting XP" value={`${state.bustingExp || 0}%`} />
+              <div style={{ ...panel, padding: "10px 12px", display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: 13 }}>
+                  <span style={muted}>Level</span>
+                  <strong>{level}</strong>
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: 13 }}>
+                  <span style={muted}>Respect</span>
+                  <strong>{fmtRespect(Number(state.respect || 0))}</strong>
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: 13 }}>
+                  <span style={muted}>Crime W/L</span>
+                  <strong>{state.crimesSucceeded}/{state.crimesFailed}</strong>
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: 13 }}>
+                  <span style={muted}>Busting XP</span>
+                  <strong>{state.bustingExp || 0}%</strong>
+                </span>
               </div>
 
+              <HomePanel title="Operations Overview" rightMeta={unreadNotifications.length > 0 ? "Unread signals" : "Board stable"}>
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ border: "1px solid #4b7c59", background: "linear-gradient(180deg, #33513a 0%, #1d2f22 100%)", color: "#eef8f0", padding: "4px 9px", fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                      {jailMs > 0 ? "Jailed" : hospitalMs > 0 ? "Hospitalized" : "Ready for actions"}
+                    </span>
+                    <span style={{ border: `1px solid ${travelCooldownMs > 0 || jailMs > 0 || hospitalMs > 0 ? "#8c4e4e" : "#4b7c59"}`, background: travelCooldownMs > 0 || jailMs > 0 || hospitalMs > 0 ? "linear-gradient(180deg, #552727 0%, #2c1515 100%)" : "linear-gradient(180deg, #33513a 0%, #1d2f22 100%)", color: "#eef8f0", padding: "4px 9px", fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                      {travelCooldownMs > 0 ? travelCooldownShortText : "Travel ready"}
+                    </span>
+                    <span style={{ border: `1px solid ${liveContracts.length > 0 ? "#4b7c59" : "#525965"}`, background: liveContracts.length > 0 ? "linear-gradient(180deg, #33513a 0%, #1d2f22 100%)" : "linear-gradient(180deg, #2b3038 0%, #171b22 100%)", color: "#eef1f5", padding: "4px 9px", fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                      {liveContracts.length > 0 ? `${liveContracts.length} live contracts` : "Contract board quiet"}
+                    </span>
+                    <span style={{ border: `1px solid ${unreadNotifications.length > 0 ? "#5b5f8e" : "#525965"}`, background: unreadNotifications.length > 0 ? "linear-gradient(180deg, #3a3f69 0%, #222746 100%)" : "linear-gradient(180deg, #2b3038 0%, #171b22 100%)", color: "#eef1f5", padding: "4px 9px", fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                      {unreadNotifications.length > 0 ? `${unreadNotifications.length} unread updates` : "Notifications clear"}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+                    <div style={{ ...panel, padding: "10px 12px", gap: 4 }}>
+                      <div style={muted}>Current city</div>
+                      <div style={{ fontWeight: 900 }}>{currentCityName}</div>
+                      <div style={muted}>
+                        {travelCooldownMs > 0
+                          ? `Next travel ${travelCooldownShortText.toLowerCase()}.`
+                          : currentCityTerritoryCount > 0
+                            ? `${currentCityTerritoryCount} crew territory hold${currentCityTerritoryCount === 1 ? "" : "s"} here.`
+                            : "No crew territory hold in this city yet."}
+                      </div>
+                    </div>
+                    <div style={{ ...panel, padding: "10px 12px", gap: 4 }}>
+                      <div style={muted}>Crew position</div>
+                      <div style={{ fontWeight: 900 }}>{data.crew?.name || "Independent"}</div>
+                      <div style={muted}>
+                        {data.crew
+                          ? `${territoryHoldings.length} territor${territoryHoldings.length === 1 ? "y" : "ies"} • $${totalTerritoryIncome.toLocaleString()}/hour`
+                          : "Join or build a crew to start territory and bank pressure."}
+                      </div>
+                    </div>
+                    <div style={{ ...panel, padding: "10px 12px", gap: 4 }}>
+                      <div style={muted}>Notification mix</div>
+                      <div style={{ fontWeight: 900 }}>{notificationMix}</div>
+                      <div style={muted}>
+                        {safeNotifications.length > 0
+                          ? `${safeNotifications.length} recent update${safeNotifications.length === 1 ? "" : "s"} hit your board.`
+                          : "Your dashboard feed is quiet right now."}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ ...panel, padding: "10px 12px", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <strong>
+                        {jailMs > 0
+                          ? "Handle your jail status first"
+                          : hospitalMs > 0
+                            ? "Recover before pushing new actions"
+                            : liveContracts.length > 0
+                              ? "You are free to push progression"
+                              : "Board is quiet, so push stats or crimes"}
+                      </strong>
+                      <button style={subBtn} onClick={() => setTab(liveContracts.length > 0 ? "log" : "crimes")}>
+                        {liveContracts.length > 0 ? "Open Log" : "Open Crimes"}
+                      </button>
+                    </div>
+                    <div style={muted}>
+                      {jailMs > 0
+                        ? `You are locked out of most action tabs for another ${fmt(jailMs)}.`
+                        : hospitalMs > 0
+                          ? `Hospital time is your main blocker right now. ${fmt(hospitalMs)} remaining.`
+                          : liveContracts.length > 0
+                            ? `There ${liveContracts.length === 1 ? "is" : "are"} ${liveContracts.length} contract${liveContracts.length === 1 ? "" : "s"} ready to claim below.`
+                            : "Jobs, crimes, training, and travel are all open right now."}
+                    </div>
+                  </div>
+                </div>
+              </HomePanel>
+
               <div style={homeTopGrid}>
-                <HomePanel title="Battle Stats" rightMeta={`Effective total ${effectiveBattleTotal.toLocaleString()}`}>
+                <HomePanel title="Combat Snapshot" rightMeta={`Effective total ${effectiveBattleTotal.toLocaleString()}`}>
                   <div style={battleTable}>
                     <div style={battleHeaderCell}>Stat</div>
                     <div style={battleHeaderCell}>Base</div>
@@ -1091,12 +1214,12 @@ const shopGroups = [
                   </div>
                 </HomePanel>
 
-                <HomePanel title="Latest Attacks" rightMeta={`${state.wins || 0}W / ${state.losses || 0}L`}>
+                <HomePanel title="Combat Feed" rightMeta={`${state.wins || 0}W / ${state.losses || 0}L`}>
                   <div style={activityList}>
-                    {recentAttackLog.length === 0 ? (
-                      <div style={activityItem}>No recent attack entries yet.</div>
+                    {homeFeed.length === 0 ? (
+                      <div style={activityItem}>No combat or action reports have landed yet.</div>
                     ) : (
-                      recentAttackLog.map((entry: string, index: number) => (
+                      homeFeed.map((entry: string, index: number) => (
                         <div key={`${entry}-${index}`} style={activityItem}>
                           {entry}
                         </div>
@@ -1106,7 +1229,7 @@ const shopGroups = [
                 </HomePanel>
               </div>
 
-              <HomePanel title="Equipped Weapons & Armor" rightMeta={`${homeEquippedItems.filter((entry) => entry.item).length}/${homeEquippedItems.length} equipped`}>
+              <HomePanel title="Active Loadout" rightMeta={`${homeEquippedItems.filter((entry) => entry.item).length}/${homeEquippedItems.length} equipped`}>
                 <div style={equipmentGrid}>
                   {homeEquippedItems.map((entry) => (
                     <EquipmentCard key={entry.slot} slot={entry.slot} item={entry.item} />
@@ -1114,24 +1237,76 @@ const shopGroups = [
                 </div>
               </HomePanel>
 
-              <div style={panel}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <strong>Level Progress</strong>
-                  <span>{level >= 100 ? "MAX" : `${fmtRespect(Number(state.respect || 0) - currentLevelFloor)}/${fmtRespect(nextLevelFloor - currentLevelFloor)}`}</span>
+              <HomePanel
+                title="Progress Snapshot"
+                rightMeta={level >= 100 ? "MAX" : `${fmtRespect(Number(state.respect || 0) - currentLevelFloor)}/${fmtRespect(nextLevelFloor - currentLevelFloor)}`}
+              >
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    <div style={{ ...panel, padding: "8px 10px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <div style={muted}>Current level</div>
+                      <div style={{ fontWeight: 900, fontSize: 18 }}>{level}</div>
+                    </div>
+                    <div style={{ ...panel, padding: "8px 10px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <div style={muted}>Progress to next</div>
+                      <div style={{ fontWeight: 900, fontSize: 18 }}>{levelProgressPct.toFixed(1)}%</div>
+                    </div>
+                    <div style={{ ...panel, padding: "8px 10px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <div style={muted}>Current focus</div>
+                      <div style={{ fontWeight: 900, fontSize: 18 }}>{jailMs > 0 || hospitalMs > 0 ? "Status recovery" : "Push stats"}</div>
+                    </div>
+                  </div>
+                  <div style={track}><div style={{ ...fill, width: `${levelProgressPct}%`, background: "#7f63db" }} /></div>
+                  <div style={muted}>
+                    {level >= 100
+                      ? "Maximum level reached."
+                      : `Current level starts at ${fmtRespect(currentLevelFloor)} respect. Next level starts at ${fmtRespect(nextLevelFloor)} respect and the next level gap is ${fmtRespect(getRespectNeededForNextLevel(level))} respect.`}
+                  </div>
                 </div>
-                <div style={track}><div style={{ ...fill, width: `${levelProgressPct}%`, background: "#7f63db" }} /></div>
-                <div style={muted}>
-                  {level >= 100
-                    ? "Maximum level reached."
-                    : `Current level starts at ${fmtRespect(currentLevelFloor)} respect. Next level starts at ${fmtRespect(nextLevelFloor)} respect and the next level gap is ${fmtRespect(getRespectNeededForNextLevel(level))} respect.`}
-                </div>
-              </div>
+              </HomePanel>
 
-              {data.contracts.map((c) => (
-                <Row key={c.id} title={c.title} body={c.body}>
-                  <button style={btn} onClick={() => apiCall(`/api/demo/${activeHandle}/contracts/${c.id}/claim`, { method: "POST" }).then(apply).catch((e) => showErrorNotice(e.message))}>Claim</button>
-                </Row>
-              ))}
+              <div style={homeTopGrid}>
+                <HomePanel title="Live Contracts" rightMeta={liveContracts.length > 0 ? `${liveContracts.length} ready` : "Quiet board"}>
+                  <div style={activityList}>
+                    {liveContracts.length === 0 ? (
+                      <div style={activityItem}>No live contracts are sitting on the board right now.</div>
+                    ) : (
+                      liveContracts.slice(0, 4).map((c: any) => (
+                        <div key={c.id} style={{ ...activityItem, display: "grid", gap: 6 }}>
+                          <strong>{c.title}</strong>
+                          <div style={muted}>{c.body}</div>
+                          <div>
+                            <button
+                              style={btn}
+                              onClick={() => apiCall(`/api/demo/${activeHandle}/contracts/${c.id}/claim`, { method: "POST" }).then(apply).catch((e) => showErrorNotice(e.message))}
+                            >
+                              Claim Contract
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </HomePanel>
+
+                <HomePanel title="Notification Center Preview" rightMeta={unreadNotifications.length > 0 ? "Unread on top" : "All caught up"}>
+                  <div style={activityList}>
+                    {safeNotifications.length === 0 ? (
+                      <div style={activityItem}>No notifications have landed yet.</div>
+                    ) : (
+                      safeNotifications.slice(0, 4).map((entry: any, index: number) => (
+                        <div key={entry?.id || index} style={{ ...activityItem, display: "grid", gap: 4 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            <strong>{entry?.title || entry?.kind || "Update"}</strong>
+                            <span style={muted}>{entry?.read || entry?.isRead || entry?.readAt ? "Read" : "Unread"}</span>
+                          </div>
+                          <div style={muted}>{entry?.body || "No extra detail provided."}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </HomePanel>
+              </div>
             </div>
           )}
 
